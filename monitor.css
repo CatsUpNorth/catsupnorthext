@@ -1,0 +1,96 @@
+body {
+  font-family: Arial, sans-serif;
+  padding: 10px;
+}
+
+.tab-container {
+  display: flex;
+  justify-content: space-between;
+  background-color: rgb(1, 64, 54);
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.tab {
+  flex: 1;
+  padding: 10px;
+  text-align: center;
+  cursor: pointer;
+  color: rgb(255, 244, 213);
+  border: 1px solid rgb(1, 64, 54);
+  border-bottom: none;
+}
+
+.tab.active {
+  background-color: rgb(255, 244, 213);
+  color: rgb(1, 64, 54);
+  font-weight: bold;
+}
+
+.tab-content {
+  display: none;
+  border: 1px solid rgb(1, 64, 54);
+  padding: 10px;
+  background-color: rgb(255, 244, 213);
+}
+
+.tab-content.active {
+  display: block;
+}
+
+#feed {
+  border: 1px solid rgb(1, 64, 54);
+  padding: 10px;
+  background-color: rgb(255, 244, 213);
+  margin-bottom: 10px;
+  font-size:8px;
+  overflow:hidden;
+}
+
+form {
+  margin-top: 20px;
+}
+
+form label {
+  display: block;
+  margin-bottom: 5px;
+  color: rgb(1, 64, 54);
+}
+
+form input, 
+form select {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid rgb(1, 64, 54);
+  border-radius: 5px;
+  box-sizing: border-box;
+}
+
+form button[type="submit"] {
+  background-color: rgb(1, 64, 54);
+  color: rgb(255, 244, 213);
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+form button[type="submit"]:hover {
+  background-color: rgb(0, 51, 43);
+}
+
+.invoice{
+	border:1px solid rgb(1, 64, 54);
+	border-radius:5px;
+	padding:5px;
+	margin:5px;
+	display:block;
+	font-size:9px;
+}
+
+.invoice a{
+	text-decoration:underline;
+	cursor:pointer;
+	color:blue;
+}

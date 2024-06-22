@@ -1,0 +1,59 @@
+<head>
+  <title>CatsUpNorth</title>
+  <link href="monitor.css" rel="stylesheet">
+</head>
+<body>
+  <div class="tab-container">
+    <div class="tab" id="tab-home">Home</div>
+    <div class="tab" id="tab-buy">SUKs</div>
+    <div class="tab" id="tab-settings">Settings</div>
+  </div>
+  
+  <div id="feed" class="feed"></div>
+
+  <div id="home" class="tab-content active">
+	<h4>Current URL</h4>
+	<h5 id="current_url"></h5>
+  </div>
+
+  <div id="buy" class="tab-content">
+    <h4>Single Use Keys</h4>
+	<br>
+	<span>Available: <strong id="available_count"></strong></span>
+	<br>
+	<span>Spent: <strong id="spent_count"></strong></span>
+	<br>
+	<br>
+    <h4>Buy Single Use Keys</h4>
+    <p>Buy Single Use Keys (SUKs) for publishing your comments to the CatsUpNorth server. "Single Use Keys" are 1-time API keys or compute credits that are use to consume the CatsUpNorth REST API anonymously.</p>
+	 <form id="buy_form">
+		<label for="number-input">Amount:</label>
+		<br>
+		<input type="number" id="buy_val" name="number-input" required>
+		<br>
+		<br>
+		<label for="select-input">Currency:</label>
+		<br>
+		<select id="buy_curr" name="select-input" required>
+		  <option value="usd">USD</option>
+		  <option value="btc" disabled>Bitcoin (coming soon)</option>
+		  <option value="xmr" disabled>Monero (coming soon)</option>
+		</select>
+		<br>
+		<br>
+		<input type="submit" value="Buy!">
+	</form>
+	<br>
+	<br>
+    <h4>Invoices</h4>
+	<div id="invoice_container"></div>
+  </div>
+
+  <div id="settings" class="tab-content">
+    <h4>Settings</h4>
+    <form id="settings_form"></form>
+  </div>
+
+  <script src="monitor.js"></script>
+</body>
+</html>
