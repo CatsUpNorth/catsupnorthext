@@ -63,12 +63,14 @@ class AppState {
 		this.saveState();
 	}
 	
+	// Saves invoice to state
 	addInvoice(captcha, val, curr){
 		this.state.invoices[captcha] = {
 			num_keys_downloaded: 	0, // Updated when user takes delivery of keys.
 			created:				new Date().toISOString(),
 			val:					val,
-			curr:					curr
+			curr:					curr,
+			secret:					null,
 		};
 		this.rebuildInvoiceList();
 		this.saveState();
@@ -77,7 +79,6 @@ class AppState {
 	buyKeys(val, curr) {
 		const settings 	= this.getSettings();
 		const buyEndpoint 	= `${settings.server_url}/buy?val=${encodeURIComponent(val)}&cur=${encodeURIComponent(curr)}`;
-		console.log(buyEndpoint);
 		fetch(buyEndpoint)
 			.then(response => {
 				if (response.ok) {
@@ -262,13 +263,9 @@ class AppState {
 			invoiceDiv.appendChild(created);
 
 			const val = document.createElement('p');
-			val.textContent = `Value: ${invoice.val}`;
+			val.textContent = `Purchase Price: ${invoice.val} ${invoice.curr}`;
 			invoiceDiv.appendChild(val);
 
-			const curr = document.createElement('p');
-			curr.textContent = `Currency: ${invoice.curr}`;
-			invoiceDiv.appendChild(curr);
-			
 			// Only add redeem link if not already redeemed.
 			// We can skip this step if the invoice has been paid or if it has been marked "invalid captcha".
 			if(1){ 
@@ -276,7 +273,36 @@ class AppState {
 				redeemLink.textContent = `Redeem`;
 				redeemLink.setAttribute("data-captcha-id",name);
 				redeemLink.addEventListener('click', (e) => {
-					console.log(e.target.getAttribute("data-captcha-id"));
+					// If the invoice does not have a secret, request it by POSTing the captcha_id to the /redeem_invoice endpoint.
+					const captchaId = e.target.getAttribute('data-captcha-id');
+					const settings = this.getSettings();
+					const redeemEndpoint = `${settings.server_url}/redeem_invoice`;
+					const formData = new FormData();
+					formData.append('captcha_id', captchaId);
+
+					// Send the POST request to redeem the invoice
+					fetch(redeemEndpoint, {
+						method: 'POST',
+						body: formData
+					}).then(response => {
+						if (response.ok) {
+							return response.text();
+						} else {
+							throw new Error('Network response was not ok');
+						}
+					}).then(json => {	
+						const data = JSON.parse(json);
+						if(data.secret){
+							this.state.invoices[captchaId].secret = data.secret;
+							this.rebuildInvoiceList();
+						}else{
+							alert("ERROR: Could not redeem invoice. See console for details.");
+							console.error(data);
+						}
+					}).catch(error => {
+						this.feed('There has been a problem with your fetch operation. See console.', true);
+						console.error(error);
+					});
 				});
 				invoiceDiv.appendChild(redeemLink);
 			}
