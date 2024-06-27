@@ -64,13 +64,26 @@ class AppState {
 	}
 	
 	// Saves invoice to state
-	addInvoice(captcha, val, curr){
+	addInvoice(captcha, secret, val, curr){
+		/* /redeem_invoice enpoint expects {
+			"msg": 			"", 
+			"satoshi": 		0,
+			"balance":		0,
+			"btc": 			0.0,
+			"tokens": 		0, # total amount awarded
+			"usd_exchange": 0.0,
+			"rate_quote": 	0, # satoshis per token
+			"error":		None
+		} */
 		this.state.invoices[captcha] = {
-			num_keys_downloaded: 	0, // Updated when user takes delivery of keys.
-			created:				new Date().toISOString(),
-			val:					val,
-			curr:					curr,
-			secret:					null,
+			secret:		secret,
+			satoshi: 	0, 
+			balance:	0, // satoshi remaining
+			created:	new Date().toISOString(),
+			tokens:		0, // total api calls awarded
+			rate_quote:	0,
+			val:		val,
+			curr:		curr,
 		};
 		this.rebuildInvoiceList();
 		this.saveState();
@@ -82,14 +95,30 @@ class AppState {
 		fetch(buyEndpoint)
 			.then(response => {
 				if (response.ok) {
-				return response.text();
+					return response.text();
 				} else {
-				throw new Error('Network response was not ok');
+					throw new Error('Network response was not ok');
 				}
 			})
-			.then(captchaId => {
+			.then(jsonData => { //  Expected: { "captcha_id": None, "secret": None, "error": None }
+				const data = JSON.parse(jsonData);
+				const captchaId = data.captcha_id 	|| null;
+				const secret	= data.secret		|| null;
+				const error 	= data.error		|| null;
 				const settings 	= this.getSettings();
-				this.addInvoice(captchaId,val,curr);
+				if (error) {
+					this.feed(`Error: ${error}`, true);
+					return;
+				}
+				if (!captchaId) {
+					this.feed('Error: No captcha ID received.', true);
+					return;
+				}
+				if (!secret) {
+					this.feed('Error: No secret received.', true);
+					return;
+				}
+				this.addInvoice(captchaId, secret, val, curr);
 				this.feed(`Received Captcha ID: ${captchaId}`);
 				
 				// Create a form dynamically
@@ -104,8 +133,15 @@ class AppState {
 				input.name = 'captcha_id';
 				input.value = captchaId;
 
-				// Append the input to the form, ppend the form to the body (needed for submission), submit, and then remove.
+				// Create in input element for the secret
+				const secretInput = document.createElement('input');
+				secretInput.type = 'hidden';
+				secretInput.name = 'secret';
+				secretInput.value = secret;
+
+				// Append the input to the form, append the form to the body (needed for submission), submit, and then remove.
 				form.appendChild(input);
+				form.appendChild(secretInput);
 				document.body.appendChild(form);
 				form.submit();
 				document.body.removeChild(form);
@@ -279,6 +315,7 @@ class AppState {
 					const redeemEndpoint = `${settings.server_url}/redeem_invoice`;
 					const formData = new FormData();
 					formData.append('captcha_id', captchaId);
+					formData.append('secret', app.state.invoices[captchaId].secret);
 
 					// Send the POST request to redeem the invoice
 					fetch(redeemEndpoint, {
@@ -291,13 +328,21 @@ class AppState {
 							throw new Error('Network response was not ok');
 						}
 					}).then(json => {	
+						/* expects {
+							"msg": 			"", 
+							"satoshi": 		0,
+							"btc": 			0.0,
+							"tokens": 		0, # total amount awarded
+							"usd_exchange": 0.0,
+							"error":		None
+						} */
 						const data = JSON.parse(json);
-						if(data.secret){
-							this.state.invoices[captchaId].secret = data.secret;
+						if(data.error){
+							this.feed(`Error: ${data.error}`, true);
+						}if(data.msg){
+							this.feed(data.msg);
+							this.state.invoices[captchaId].num_keys_downloaded = data.tokens;
 							this.rebuildInvoiceList();
-						}else{
-							alert("ERROR: Could not redeem invoice. See console for details.");
-							console.error(data);
 						}
 					}).catch(error => {
 						this.feed('There has been a problem with your fetch operation. See console.', true);
