@@ -16,13 +16,11 @@ class AppState {
 
 	// Load the state from chrome.storage.local
 	loadState() {
-		chrome.storage.local.get(['available_keys', 'spent_keys', 'invoices', 'current_user_url', 'settings'], (result) => {
+		chrome.storage.local.get(['invoices', 'current_user_url', 'settings'], (result) => {
 			if (chrome.runtime.lastError) {
 				console.error('Error loading state:', chrome.runtime.lastError);
 				return;
 			}
-			this.state.available_keys 	= result.available_keys 	|| [];
-			this.state.spent_keys 		= result.spent_keys 		|| [];
 			this.state.invoices 		= result.invoices 			|| {};
 			this.state.current_user_url = result.current_user_url 	|| '';
 			this.state.settings 		= result.settings 			|| {};
@@ -49,41 +47,20 @@ class AppState {
 		});
 	}
 	
-	// Add a key to available_keys
-	addKeys(keys) {
-		if (!Array.isArray(keys) || !keys.every(key => typeof key === 'string')) {
-			this.feed('Invalid input: keys should be an array of strings.',true);
-			return;
-		}
-		keys.forEach(key => {
-			if (!this.state.available_keys.includes(key)) {
-				this.state.available_keys.push(key);
-			}
-		});
-		this.saveState();
-	}
-	
 	// Saves invoice to state
 	addInvoice(captcha, secret, val, curr){
-		/* /redeem_invoice enpoint expects {
-			"msg": 			"", 
-			"satoshi": 		0,
-			"balance":		0,
-			"btc": 			0.0,
-			"tokens": 		0, # total amount awarded
-			"usd_exchange": 0.0,
-			"rate_quote": 	0, # satoshis per token
-			"error":		None
-		} */
 		this.state.invoices[captcha] = {
-			secret:		secret,
-			satoshi: 	0, 
-			balance:	0, // satoshi remaining
-			created:	new Date().toISOString(),
-			tokens:		0, // total api calls awarded
-			rate_quote:	0,
-			val:		val,
-			curr:		curr,
+			secret:			secret,
+			satoshi_paid: 	0,
+			btc_paid:		'0.0', 
+			balance:		0, // satoshi remaining
+			conv_balance:	0, // dollar value of balance
+			created:		new Date().toISOString(),
+			tokens:			0, // total api calls awarded
+			rate_quote:		0,
+			val:			val,
+			curr:			curr,
+			link:			null
 		};
 		this.rebuildInvoiceList();
 		this.saveState();
@@ -152,18 +129,47 @@ class AppState {
 			});
 	}
 
-	// Move a key from available_keys to spent_keys and return array of newly spent keys for API use.
-	spendKeys(n = 1) {
-		let spentKeys = [];
-		if(this.state.available_keys.length >= n){
-			while(n > 0){
-				spentKey = this.state.available_keys.pop();
-				this.state.spent_keys.push(spentKey);
-				n--;
+	// Create a thread
+	createThread(captcha_id, description, password, css) {
+		this.sendChat(captcha_id, description, 0, 0, 0, password, css);
+	}
+
+	// send chat or create threda (reply_to is zero)
+	sendChat(captcha_id, content, reply_to = 0, thread_id = 0, spend = 0, password = null, css = null){
+		const settings 		= this.getSettings();
+		const currentURL 	= this.getCurrentURL();
+		const chatEndpoint 	= `${settings.server_url}/send_chat`;
+		const formData 		= new FormData();
+		formData.append('captcha_id', captcha_id);
+		formData.append('secret', this.state.invoices[captcha_id].secret);
+		formData.append('content', content.toString());
+		formData.append('spend', spend)
+		formData.append('url', currentURL);
+		formData.append('reply_to', reply_to);
+		formData.append('thread_id', thread_id);
+		formData.append('password', password);
+		formData.append('css', css);
+		fetch(chatEndpoint, {
+			method: 'POST',
+			body: formData
+		}).then(response => {
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
 			}
-			this.saveState();
-		}
-		return spentKeys;
+		}).then(json => {
+			const data = JSON.parse(json);
+			console.log({data});
+			if (data.error) {
+				this.feed(`Error: ${data.error}`, true);
+			} else {
+				this.feed('Message sent.');
+			}
+		}).catch(error => {
+			this.feed('There has been a problem with your post operation. See console.', true);
+			console.error(error);
+		});
 	}
 
 	// Update settings
@@ -195,11 +201,6 @@ class AppState {
 			this.feed("Settings updated.")
 		}
 
-	}
-
-	// Getters for the state
-	getAvailableKeys() {
-		return this.state.available_keys;
 	}
 
 	getSpentKeys() {
@@ -282,6 +283,7 @@ class AppState {
 		const container = document.getElementById('invoice_container');
         container.innerHTML = '';
 		for (let name in this.state.invoices) {
+
 			const invoice = JSON.parse(JSON.stringify(this.state.invoices[name]));
 			// Create a div for each invoice
 			const invoiceDiv = document.createElement('div');
@@ -289,68 +291,143 @@ class AppState {
 			invoiceDiv.setAttribute("data-date-created",invoice.created);
 			invoiceDiv.classList.add('invoice');
 
+			const api_calls = (typeof invoice.rate_quote == 'int' && invoice.rate_quote > 0)? Math.floor(invoice.balance / invoice.rate_quote): 0;
+
+			/*	
+				app.state.invoices[name] = {
+					secret:			secret,
+					satoshi_paid: 	0,
+					btc_paid:		'0.0', 
+					balance:		0, // satoshi remaining
+					created:		new Date().toISOString(),
+					tokens:			0, // total api calls awarded
+					rate_quote:		0,
+					val:			val,
+					curr:			curr,
+					link:			null,
+					rows_remaining:	0
+				};
+			*/
+
 			// Create and append invoice details
-			const numKeysDownloaded = document.createElement('p');
-			numKeysDownloaded.textContent = `Number of Keys Downloaded: ${invoice.num_keys_downloaded}`;
-			invoiceDiv.appendChild(numKeysDownloaded);
+			const nameElement = document.createElement('strong');
+			nameElement.textContent = name;
+			invoiceDiv.appendChild(nameElement);
 
-			const created = document.createElement('p');
-			created.textContent = `Created: ${invoice.created}`;
-			invoiceDiv.appendChild(created);
+			const faceValueElement = document.createElement('p');
+			faceValueElement.textContent = `Purchase Price: ${invoice.val} ${invoice.curr}`;
+			invoiceDiv.appendChild(faceValueElement);
 
-			const val = document.createElement('p');
-			val.textContent = `Purchase Price: ${invoice.val} ${invoice.curr}`;
-			invoiceDiv.appendChild(val);
+			const btcPaidElement = document.createElement('p');
+			btcPaidElement.textContent = `BTC Paid: ${invoice.btc_paid}`;
+			invoiceDiv.appendChild(btcPaidElement);
 
-			// Only add redeem link if not already redeemed.
-			// We can skip this step if the invoice has been paid or if it has been marked "invalid captcha".
-			if(1){ 
-				const redeemLink = document.createElement('a');
-				redeemLink.textContent = `Redeem`;
-				redeemLink.setAttribute("data-captcha-id",name);
-				redeemLink.addEventListener('click', (e) => {
-					// If the invoice does not have a secret, request it by POSTing the captcha_id to the /redeem_invoice endpoint.
-					const captchaId = e.target.getAttribute('data-captcha-id');
-					const settings = this.getSettings();
-					const redeemEndpoint = `${settings.server_url}/redeem_invoice`;
-					const formData = new FormData();
-					formData.append('captcha_id', captchaId);
-					formData.append('secret', app.state.invoices[captchaId].secret);
+			const rateQuoteElement = document.createElement('p');
+			rateQuoteElement.textContent = `Rate Quote: ${invoice.rate_quote} Satoshis per API call.`;
+			invoiceDiv.appendChild(rateQuoteElement);
 
-					// Send the POST request to redeem the invoice
-					fetch(redeemEndpoint, {
-						method: 'POST',
-						body: formData
-					}).then(response => {
-						if (response.ok) {
-							return response.text();
-						} else {
-							throw new Error('Network response was not ok');
-						}
-					}).then(json => {	
-						/* expects {
-							"msg": 			"", 
-							"satoshi": 		0,
-							"btc": 			0.0,
-							"tokens": 		0, # total amount awarded
-							"usd_exchange": 0.0,
-							"error":		None
-						} */
-						const data = JSON.parse(json);
-						if(data.error){
-							this.feed(`Error: ${data.error}`, true);
-						}if(data.msg){
-							this.feed(data.msg);
-							this.state.invoices[captchaId].num_keys_downloaded = data.tokens;
-							this.rebuildInvoiceList();
-						}
-					}).catch(error => {
-						this.feed('There has been a problem with your fetch operation. See console.', true);
-						console.error(error);
-					});
-				});
-				invoiceDiv.appendChild(redeemLink);
+			const balanceElement = document.createElement('p');
+			balanceElement.textContent = `Balance: ${invoice.balance} Satoshis`;
+			if(!isNaN(invoice.conv_balance*1)){
+				const twoDecimalConvBalance = (invoice.conv_balance*1).toFixed(2);
+				const convCurrency = invoice.currency_pair.split('_')[1];
+				balanceElement.textContent += ` (~${twoDecimalConvBalance} ${convCurrency})`;
 			}
+			invoiceDiv.appendChild(balanceElement);
+
+			const apiCallsAvailable = document.createElement('p');
+			apiCallsAvailable.textContent = `API Calls Available: ${api_calls}`;
+			invoiceDiv.appendChild(apiCallsAvailable);
+
+			const rowsRemainingElement = document.createElement('p');
+			rowsRemainingElement.textContent = `Chats Immediately Available: ${invoice.rows_remaining}`;
+			invoiceDiv.appendChild(rowsRemainingElement);
+
+			const createdElement = document.createElement('p');
+			createdElement.textContent = `Created: ${invoice.created}`;
+			invoiceDiv.appendChild(createdElement);
+
+			const exchangeRateElement = document.createElement('p');
+			exchangeRateElement.textContent = `Exchange Rate: ${invoice.exchange_rate} ${invoice.currency_pair}`;
+			invoiceDiv.appendChild(exchangeRateElement);
+
+			const invoiceLink = document.createElement('a');
+			invoiceLink.textContent = `Open`;
+			invoiceLink.href = invoice.link;
+			invoiceLink.target = '_blank';
+			invoiceLink.style.paddingRight = '10px';
+			invoiceDiv.appendChild(invoiceLink);
+
+			const redeemLink = document.createElement('a');
+			redeemLink.textContent = `Redeem`;
+			invoiceLink.style.paddingLeft = '10px';
+			redeemLink.setAttribute("data-captcha-id",name);
+			redeemLink.addEventListener('click', (e) => {
+				// empty the invoice container and add wait message
+				const invoice_container = document.getElementById('invoice_container');
+				invoice_container.innerHTML = '';
+				const waitMessage = document.createElement('p');
+				waitMessage.textContent = 'Please wait...';
+				invoice_container.appendChild(waitMessage);
+
+				// Get the captcha ID from the clicked element
+				const captchaId = e.target.getAttribute('data-captcha-id');
+				const settings = this.getSettings();
+				const redeemEndpoint = `${settings.server_url}/redeem_invoice`;
+				const formData = new FormData();
+				formData.append('captcha_id', captchaId);
+				formData.append('secret', app.state.invoices[captchaId].secret);
+
+				// Send the POST request to redeem the invoice
+				fetch(redeemEndpoint, {
+					method: 'POST',
+					body: formData
+				}).then(response => {
+					if (response.ok) {
+						return response.text();
+					} else {
+						throw new Error('Network response was not ok');
+					}
+				}).then(json => {
+					/* expects {
+						"msg": 				"", 
+						"satoshi_paid": 	0,
+						"btc_paid":			"0.0",
+						"btc": 				0.0,
+						"error":			None
+						"link":				None,
+						"msg":				"",
+						"rate_quote":		0,
+						"rows_remaining":	0,
+						"exchange_rate":	0.0,
+						"currency_pair":	""
+					} */
+					const data = JSON.parse(json);
+					console.log({data});
+					if(data.error){
+						this.feed(`Error: ${data.error.toString()}`, true);
+					}if(data.msg){
+						this.feed(data.msg);
+						this.state.invoices[captchaId].rows_remaining 	= data.rows_remaining 	|| 0;
+						this.state.invoices[captchaId].satoshi_paid 	= data.satoshi_paid 	|| 0;
+						this.state.invoices[captchaId].btc_paid 		= data.btc_paid			|| 0;
+						this.state.invoices[captchaId].balance 			= data.balance			|| 0;
+						this.state.invoices[captchaId].rate_quote 		= data.rate_quote		|| 0;
+						this.state.invoices[captchaId].link 			= data.link				|| null;
+						this.state.invoices[captchaId].exchange_rate 	= data.exchange_rate	|| "...";
+						this.state.invoices[captchaId].currency_pair 	= data.currency_pair	|| "...";
+						if (!isNaN(data.exchange_rate*1)) {
+							this.state.invoices[captchaId].conv_balance = data.exchange_rate * (data.balance / 100000000);
+						}
+						this.saveState();
+						this.rebuildInvoiceList();
+					}
+				}).catch(error => {
+					this.feed('There has been a problem with your fetch operation. See console.', true);
+					console.error(error);
+				});
+			});
+			invoiceDiv.appendChild(redeemLink);
 
 			// Append the invoice div to the container
 			container.appendChild(invoiceDiv);
@@ -416,4 +493,40 @@ document.getElementById('settings_form').addEventListener('submit', (event) => {
 		formObject[key] = value;
 	});
 	app.updateSettings(formObject);
+});
+document.getElementById('create_thread_toggle_link').addEventListener('click', () => {
+	// toggle #create_thread_form
+	const form = document.getElementById('create_thread_form');
+	const link = document.getElementById('create_thread_toggle_link');
+	const form_is_visible = form.style.display !== 'none';
+	if (form_is_visible){
+		link.textContent 	= '⨤ Create Thread';
+		form.style.display 	= 'none';
+	} else {
+		// Add invoice captcha_ids to .invoice_selector dropdown
+		const invoices 			= app.getInvoices();
+		const invoiceSelectors 	= document.getElementsByClassName('invoice_selector');
+		for (let i = 0; i < invoiceSelectors.length; i++) {
+			const invoiceSelector = invoiceSelectors[i];
+			invoiceSelector.innerHTML = '';
+			for (let captchaId in invoices) {
+				const option = document.createElement('option');
+				option.value = captchaId;
+				option.textContent = captchaId;
+				invoiceSelector.appendChild(option);
+			}
+		}
+		link.textContent 		= '🗙 Hide Form';
+		form.style.display		= 'block';
+	}
+});
+document.getElementById('create_thread_form').addEventListener('submit', (event) => {
+	event.preventDefault();
+	const form = event.target;
+	const formData = new FormData(form);
+	const formObject = {};
+	formData.forEach((value, key) => {
+		formObject[key] = value;
+	});
+	app.createThread(formObject.captcha_id,formObject.content,formObject.password,formObject.css);
 });

@@ -58,7 +58,8 @@ form label {
 }
 
 form input, 
-form select {
+form select,
+form textarea {
   width: 100%;
   padding: 10px;
   margin-bottom: 10px;
@@ -93,4 +94,13 @@ form button[type="submit"]:hover {
 	text-decoration:underline;
 	cursor:pointer;
 	color:blue;
+}
+
+a {
+  cursor:pointer !important;
+  color:blue;
+  text-decoration:underline;
+}
+a:hover {
+  opacity:0.5;
 }

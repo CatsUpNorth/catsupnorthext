@@ -1,11 +1,12 @@
 <head>
   <title>CatsUpNorth</title>
   <link href="monitor.css" rel="stylesheet">
+  <meta charset="utf-8">
 </head>
 <body>
   <div class="tab-container">
     <div class="tab" id="tab-home">Home</div>
-    <div class="tab" id="tab-buy">SUKs</div>
+    <div class="tab" id="tab-buy">Invoices</div>
     <div class="tab" id="tab-settings">Settings</div>
   </div>
   
@@ -14,20 +15,25 @@
   <div id="home" class="tab-content active">
 	<h4>Current URL</h4>
 	<h5 id="current_url"></h5>
+	<br><br>
+	<a id="create_thread_toggle_link">⨤ Create Thread</a>
+	<form id="create_thread_form" style="display:none;">
+		<label for="content">Thread Description</label>
+		<input type="text" name="content" required>
+		<label for="captcha_id">Invoice</label>
+		<select name="captcha_id" class="invoice_selector" required></select>
+		<label for="css">CSS</label>
+		<textarea name="css" placeholder="CSS for the thread."></textarea>
+		<label for="password">Password</label>
+		<input type="text" name="password" placeholder="Leave blank to create public thread.">
+		<input type="submit" value="Create Thread">
+	</form>
+	<hr>
+	<div id="thread_container"></div>
   </div>
 
   <div id="buy" class="tab-content">
-    <h4>Chat Secrets</h4>
-	<br>
-	<span>Available: <strong id="available_count"></strong></span>
-	<br>
-	<span>Spent: <strong id="spent_count"></strong></span>
-	<br>
-	<br>
-    <h4>Buy Chat Secrets</h4>
-    <p>
-		Buy chat secrets to publish your comments to the CatsUpNorth server. 
-		Chat Secrets are 1-time-keys/compute-credits that are use to consume the REST API anonymously.</p>
+    <h4>Buy API Access</h4>
 	 <form id="buy_form">
 		<label for="number-input">Amount:</label>
 		<br>
