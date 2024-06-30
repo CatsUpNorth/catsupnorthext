@@ -377,6 +377,8 @@ class AppState {
 				const formData = new FormData();
 				formData.append('captcha_id', captchaId);
 				formData.append('secret', app.state.invoices[captchaId].secret);
+				console.log(captchaId);
+				console.log(app.state.invoices[captchaId].secret);
 
 				// Send the POST request to redeem the invoice
 				fetch(redeemEndpoint, {
@@ -451,6 +453,9 @@ const app = new AppState();
 chrome.runtime.onMessage.addListener((message) => {
 	if (message.url) {
 		app.updateCurrentUserURL(message.url);
+		document.getElementById('thread_container').innerHTML = '';
+		document.getElementById('thread_loader').style.display = 'inline';
+		app.feed("");
 	}
 });
 
@@ -475,6 +480,88 @@ function showTab(tabId) {
 		}
 	});
 }
+
+function load_invoice_selectors(){
+	const invoices 			= app.getInvoices();
+	const invoiceSelectors 	= document.getElementsByClassName('invoice_selector');
+	for (let i = 0; i < invoiceSelectors.length; i++) {
+		const invoiceSelector = invoiceSelectors[i];
+		invoiceSelector.innerHTML = '';
+		for (let captchaId in invoices) {
+			const option = document.createElement('option');
+			option.value = captchaId;
+			option.textContent = captchaId;
+			invoiceSelector.appendChild(option);
+		}
+	}
+}
+
+function load_thread(threadId){
+	// TODO Change to post to allow for password and css
+	const threadContainer = document.getElementById('thread_container');
+	fetch(`${settings.server_url}/get_thread_chats?thread_id=${threadId}`)
+		.then(response => {
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
+			}
+		})
+		.then(json => {
+			const data = JSON.parse(json);
+			console.log({data});
+			if (data.error) {
+				app.feed(`Error: ${data.error}`, true);
+				return;
+			}
+			app.feed(data.msg);
+			const threadChats = data.chats;
+			threadContainer.innerHTML = '';
+			threadChats.forEach(chat => {
+				const chatDiv = document.createElement('div');
+				chatDiv.classList.add('chat');
+				const replyToLink = chat.reply_to_id? `<a href="#chat_id_${chat.reply_to_id}" style="padding-left:4px;">^${chat.reply_to_id}</a>`: '';
+				chatDiv.innerHTML = `<p><strong>${chat.chat_id}${replyToLink}</strong><br>${chat.chat_content}</p>`;
+				// Reply Form and link to toggle reply form
+				const replyLink = document.createElement('a');
+				replyLink.textContent = 'Reply';
+				replyLink.href = '#';
+				replyLink.addEventListener('click', (event) => {
+					event.preventDefault();
+					const form = chatDiv.querySelector('.reply_form');
+					form.style.display = form.style.display === 'none'? 'block': 'none';
+				});
+				const replyForm = document.createElement('form');
+				replyForm.style.display = 'none';
+				replyForm.classList.add('reply_form');
+				replyForm.innerHTML = `
+					<select name="captcha_id" class="invoice_selector"></select>
+					<input type="hidden" name="reply_to" value="${chat.chat_id}">
+					<textarea name="content" placeholder="Reply..."></textarea>
+					<input type="number" name="spend" placeholder="Super Chat Spend in USD (optional)">
+					<input type="checkbox" name="is_private" value="1"> Private Message
+					<input type="submit" value="Reply">
+				`;
+				replyForm.addEventListener('submit', (event) => {
+					event.preventDefault();
+					const formData = new FormData(event.target);
+					const formObject = {};
+					formData.forEach((value, key) => {
+						formObject[key] = value;
+					});
+					app.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, 0, formObject.password, formObject.css);
+				});
+				load_invoice_selectors();
+				chatDiv.appendChild(replyForm);
+				threadContainer.appendChild(chatDiv);
+			});
+		})
+		.catch(error => {
+			app.feed('There has been a problem with your fetch operation. See console.', true);
+			console.error(error);
+		});
+	}
+
 
 /* Listeners */
 document.getElementById('tab-home').addEventListener('click', () => showTab('home'));
@@ -504,18 +591,7 @@ document.getElementById('create_thread_toggle_link').addEventListener('click', (
 		form.style.display 	= 'none';
 	} else {
 		// Add invoice captcha_ids to .invoice_selector dropdown
-		const invoices 			= app.getInvoices();
-		const invoiceSelectors 	= document.getElementsByClassName('invoice_selector');
-		for (let i = 0; i < invoiceSelectors.length; i++) {
-			const invoiceSelector = invoiceSelectors[i];
-			invoiceSelector.innerHTML = '';
-			for (let captchaId in invoices) {
-				const option = document.createElement('option');
-				option.value = captchaId;
-				option.textContent = captchaId;
-				invoiceSelector.appendChild(option);
-			}
-		}
+		load_invoice_selectors();
 		link.textContent 		= '🗙 Hide Form';
 		form.style.display		= 'block';
 	}
@@ -529,4 +605,49 @@ document.getElementById('create_thread_form').addEventListener('submit', (event)
 		formObject[key] = value;
 	});
 	app.createThread(formObject.captcha_id,formObject.content,formObject.password,formObject.css);
+});
+document.getElementById('all_thread_loader').addEventListener('click', () => {
+	const url = app.getCurrentURL();
+	// send this to the get_threads endpoint
+	const settings = app.getSettings();
+	const threadEndpoint = `${settings.server_url}/get_threads?url=${encodeURIComponent(url)}`;
+	fetch(threadEndpoint)
+		.then(response => {
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
+			}
+		})
+		.then(json => {
+			const data = JSON.parse(json);
+			console.log({data});
+			if (data.error) {
+				app.feed(`Error: ${data.error}`, true);
+				return;
+			}
+			app.feed(data.msg);
+			const threads = data.threads;
+			const threadContainer = document.getElementById('thread_container');
+			threadContainer.innerHTML = '';
+			threads.forEach(thread => {
+				const threadDiv = document.createElement('div');
+				threadDiv.classList.add('thread');
+				threadDiv.innerHTML = `<p>${thread.chat_content}</p>`;
+				threadContainer.appendChild(threadDiv);
+				loadThreadLink = document.createElement('a');
+				loadThreadLink.textContent = 'Load Thread';
+				loadThreadLink.setAttribute('data-thread-id', thread.thread_id);
+				loadThreadLink.addEventListener('click', () => {
+					// Get thread chats from the /get_thread_chats endpoint
+					const threadId = loadThreadLink.getAttribute('data-thread-id');
+					load_thread(threadId);
+				});
+				threadDiv.appendChild(loadThreadLink);
+			});
+		})
+		.catch(error => {
+			app.feed('There has been a problem with your fetch operation. See console.', true);
+			console.error(error);
+		});
 });

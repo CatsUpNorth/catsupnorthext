@@ -104,3 +104,11 @@ a {
 a:hover {
   opacity:0.5;
 }
+
+.thread, .chat {
+  border: 1px solid rgb(1, 64, 54);
+  padding: 10px;
+  background-color: rgb(255, 244, 213);
+  margin-bottom: 10px;
+  font-size:8px;
+}
