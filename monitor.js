@@ -454,7 +454,7 @@ chrome.runtime.onMessage.addListener((message) => {
 	if (message.url) {
 		app.updateCurrentUserURL(message.url);
 		document.getElementById('thread_container').innerHTML = '';
-		document.getElementById('thread_loader').style.display = 'inline';
+		document.getElementById('all_thread_loader').style.display = 'inline';
 		app.feed("");
 	}
 });
@@ -498,6 +498,7 @@ function load_invoice_selectors(){
 
 function load_thread(threadId){
 	// TODO Change to post to allow for password and css
+	const settings = app.getSettings();
 	const threadContainer = document.getElementById('thread_container');
 	fetch(`${settings.server_url}/get_thread_chats?thread_id=${threadId}`)
 		.then(response => {
@@ -539,21 +540,22 @@ function load_thread(threadId){
 					<input type="hidden" name="reply_to" value="${chat.chat_id}">
 					<textarea name="content" placeholder="Reply..."></textarea>
 					<input type="number" name="spend" placeholder="Super Chat Spend in USD (optional)">
-					<input type="checkbox" name="is_private" value="1"> Private Message
-					<input type="submit" value="Reply">
+					<input type="submit" name="reply" value="Reply">
+					<input type="submit" name="private_reply" value="Send as Private Message">
 				`;
 				replyForm.addEventListener('submit', (event) => {
 					event.preventDefault();
 					const formData = new FormData(event.target);
-					const formObject = {};
+					const formObject = {is_private: (event.submitter.name === 'private_reply' ? 1 : 0)};
 					formData.forEach((value, key) => {
 						formObject[key] = value;
 					});
 					app.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, 0, formObject.password, formObject.css);
 				});
-				load_invoice_selectors();
+				chatDiv.appendChild(replyLink);
 				chatDiv.appendChild(replyForm);
 				threadContainer.appendChild(chatDiv);
+				setTimeout(load_invoice_selectors,50);
 			});
 		})
 		.catch(error => {
@@ -610,8 +612,7 @@ document.getElementById('all_thread_loader').addEventListener('click', () => {
 	const url = app.getCurrentURL();
 	// send this to the get_threads endpoint
 	const settings = app.getSettings();
-	const threadEndpoint = `${settings.server_url}/get_threads?url=${encodeURIComponent(url)}`;
-	fetch(threadEndpoint)
+	fetch(`${settings.server_url}/get_threads?url=${encodeURIComponent(url)}`)
 		.then(response => {
 			if (response.ok) {
 				return response.text();
