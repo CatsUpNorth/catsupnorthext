@@ -519,6 +519,7 @@ function load_thread(threadId){
 			const threadChats = data.chats;
 			threadContainer.innerHTML = '';
 			threadChats.forEach(chat => {
+				console.log({chat});
 				const chatDiv = document.createElement('div');
 				chatDiv.classList.add('chat');
 				const replyToLink = chat.reply_to_id? `<a href="#chat_id_${chat.reply_to_id}" style="padding-left:4px;">^${chat.reply_to_id}</a>`: '';
@@ -536,6 +537,7 @@ function load_thread(threadId){
 				replyForm.style.display = 'none';
 				replyForm.classList.add('reply_form');
 				replyForm.innerHTML = `
+					<input type="hidden" name="thread_id" value="${threadId}">
 					<select name="captcha_id" class="invoice_selector"></select>
 					<input type="hidden" name="reply_to" value="${chat.chat_id}">
 					<textarea name="content" placeholder="Reply..."></textarea>
@@ -550,7 +552,7 @@ function load_thread(threadId){
 					formData.forEach((value, key) => {
 						formObject[key] = value;
 					});
-					app.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, 0, formObject.password, formObject.css);
+					app.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, formObject.spend);
 				});
 				chatDiv.appendChild(replyLink);
 				chatDiv.appendChild(replyForm);
