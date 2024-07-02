@@ -328,10 +328,12 @@ class AppState {
 
 			const balanceElement = document.createElement('p');
 			balanceElement.textContent = `Balance: ${invoice.balance} Satoshis`;
-			if(!isNaN(invoice.conv_balance*1)){
-				const twoDecimalConvBalance = (invoice.conv_balance*1).toFixed(2);
-				const convCurrency = invoice.currency_pair.split('_')[1];
-				balanceElement.textContent += ` (~${twoDecimalConvBalance} ${convCurrency})`;
+			if("conv_balance" in invoice && invoice.conv_balance && "currency_pair" in invoice && invoice.currency_pair){
+				if(!isNaN(invoice.conv_balance*1)){
+					const twoDecimalConvBalance = (invoice.conv_balance*1).toFixed(2);
+					const convCurrency = invoice.currency_pair.split('_')[1];
+					balanceElement.textContent += ` (~${twoDecimalConvBalance} ${convCurrency})`;
+				}
 			}
 			invoiceDiv.appendChild(balanceElement);
 
