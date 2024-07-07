@@ -31,5 +31,5 @@
     "default_path": "monitor.html"
   },
   "permissions": ["sidePanel", "tabs", "storage", "background"],
-  "host_permissions": ["https://*/*", "http://*/*"]
+  "host_permissions": ["https://*", "http://*"]
 }

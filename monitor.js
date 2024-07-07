@@ -4,7 +4,8 @@ class AppState {
 		this.state				= {};
 		this.settingsSchema 	= {};
 		this.settingsDefault 	= {
-			server_url: 			"http://localhost:5000",
+		    server_url:             "172.245.184.144",
+//			server_url: 			"http://localhost:5000",
 			thread_refresh_rate: 	3000,
 			autoload_threads: 		false,
 			url_preview_max_len: 	50,
