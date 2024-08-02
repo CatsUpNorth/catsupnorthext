@@ -4,6 +4,7 @@ body {
 }
 
 .tab-container {
+  border-radius:3px;
   display: flex;
   justify-content: space-between;
   background-color: rgb(1, 64, 54);
@@ -12,6 +13,7 @@ body {
 }
 
 .tab {
+  border-radius:3px;
   flex: 1;
   padding: 10px;
   text-align: center;
@@ -28,6 +30,7 @@ body {
 }
 
 .tab-content {
+  border-radius:3px;
   display: none;
   border: 1px solid rgb(1, 64, 54);
   padding: 10px;
@@ -39,6 +42,7 @@ body {
 }
 
 #feed {
+  border-radius:3px;
   border: 1px solid rgb(1, 64, 54);
   padding: 10px;
   background-color: rgb(255, 244, 213);
@@ -107,8 +111,9 @@ a:hover {
 
 .thread, .chat {
   border: 1px solid rgb(1, 64, 54);
-  padding: 10px;
+  padding: 5px;
   background-color: rgb(255, 244, 213);
-  margin-bottom: 10px;
+  margin-bottom: 5px;
   font-size:8px;
+  border-radius:3px;
 }

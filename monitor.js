@@ -284,6 +284,11 @@ class AppState {
         container.innerHTML = '';
 		for (let name in this.state.invoices) {
 
+			// We only want invoices for the current server
+			if (this.state.invoices[name].server_url !== this.getSettings().server_url) {
+				continue;
+			}
+
 			const invoice = JSON.parse(JSON.stringify(this.state.invoices[name]));
 			// Create a div for each invoice
 			const invoiceDiv = document.createElement('div');
@@ -420,6 +425,7 @@ class AppState {
 						this.state.invoices[captchaId].link 			= data.link				|| null;
 						this.state.invoices[captchaId].exchange_rate 	= data.exchange_rate	|| "...";
 						this.state.invoices[captchaId].currency_pair 	= data.currency_pair	|| "...";
+						this.state.invoices[captchaId].server_url		= settings.server_url;
 						if (!isNaN(data.exchange_rate*1)) {
 							this.state.invoices[captchaId].conv_balance = data.exchange_rate * (data.balance / 100000000);
 						}
@@ -456,9 +462,56 @@ chrome.runtime.onMessage.addListener((message) => {
 	if (message.url) {
 		app.updateCurrentUserURL(message.url);
 		document.getElementById('thread_container').innerHTML = '';
-		document.getElementById('all_thread_loader').style.display = 'inline';
 		app.feed("");
-	}
+		const url = app.getCurrentURL();
+		// send this to the get_threads endpoint
+		const settings = app.getSettings();
+		fetch(`${settings.server_url}/get_threads?url=${encodeURIComponent(url)}`)
+			.then(response => {
+				if (response.ok) {
+					return response.text();
+				} else {
+					throw new Error('Network response was not ok');
+				}
+			})
+			.then(json => {
+				const data = JSON.parse(json);
+				console.log({data});
+				if (data.error) {
+					app.feed(`Error: ${data.error}`, true);
+					return;
+				}
+				app.feed(data.msg);
+				const threads = data.threads;
+				const threadContainer = document.getElementById('thread_container');
+				threadContainer.innerHTML = '';
+				threads.forEach(thread => {
+					const threadDiv = document.createElement('div');
+					threadDiv.classList.add('thread');
+					threadDiv.innerHTML = `<p>${thread.thread_id} ${thread.chat_content}</p>`;
+					threadContainer.appendChild(threadDiv);
+					loadThreadLink = document.createElement('a');
+					loadThreadLink.textContent = 'Load Thread';
+					loadThreadLink.setAttribute('data-thread-id', thread.thread_id);
+					if(thread.password_required) loadThreadLink.classList.add('password_required');
+					loadThreadLink.addEventListener('click', (e) => {
+						// Get thread ID from the clicked element
+						var targ = e.target;
+						if (targ.classList.contains('password_required')) {
+							const password = prompt('Password required. Please enter the password.');
+							load_thread(targ.getAttribute('data-thread-id'), password);
+						}else{
+							load_thread(targ.getAttribute('data-thread-id'));
+						}
+					});
+					threadDiv.appendChild(loadThreadLink);
+				});
+			})
+			.catch(error => {
+				app.feed('There has been a problem with your fetch operation. See console.', true);
+				console.error(error);
+			});
+		}
 });
 
 /* Named functions */
@@ -498,76 +551,82 @@ function load_invoice_selectors(){
 	}
 }
 
-function load_thread(threadId){
+function load_thread(threadId, password = null){
 	// TODO Change to post to allow for password and css
 	const settings = app.getSettings();
 	const threadContainer = document.getElementById('thread_container');
-	fetch(`${settings.server_url}/get_thread_chats?thread_id=${threadId}`)
-		.then(response => {
-			if (response.ok) {
-				return response.text();
-			} else {
-				throw new Error('Network response was not ok');
-			}
-		})
-		.then(json => {
-			const data = JSON.parse(json);
-			console.log({data});
-			if (data.error) {
-				app.feed(`Error: ${data.error}`, true);
-				return;
-			}
-			app.feed(data.msg);
-			const threadChats = data.chats;
-			threadContainer.innerHTML = '';
-			threadChats.forEach(chat => {
-				console.log({chat});
-				const chatDiv = document.createElement('div');
-				chatDiv.classList.add('chat');
-				const replyToLink = chat.reply_to_id? `<a href="#chat_id_${chat.reply_to_id}" style="padding-left:4px;">^${chat.reply_to_id}</a>`: '';
-				chatDiv.innerHTML = `<p><strong>${chat.chat_id}${replyToLink}</strong><br>${chat.chat_content}</p>`;
-				// Reply Form and link to toggle reply form
-				const replyLink = document.createElement('a');
-				replyLink.textContent = 'Reply';
-				replyLink.href = '#';
-				replyLink.addEventListener('click', (event) => {
-					event.preventDefault();
-					const form = chatDiv.querySelector('.reply_form');
-					form.style.display = form.style.display === 'none'? 'block': 'none';
-				});
-				const replyForm = document.createElement('form');
-				replyForm.style.display = 'none';
-				replyForm.classList.add('reply_form');
-				replyForm.innerHTML = `
-					<input type="hidden" name="thread_id" value="${threadId}">
-					<select name="captcha_id" class="invoice_selector"></select>
-					<input type="hidden" name="reply_to" value="${chat.chat_id}">
-					<textarea name="content" placeholder="Reply..."></textarea>
-					<input type="number" name="spend" placeholder="Super Chat Spend in USD (optional)">
-					<input type="submit" name="reply" value="Reply">
-					<input type="submit" name="private_reply" value="Send as Private Message">
-				`;
-				replyForm.addEventListener('submit', (event) => {
-					event.preventDefault();
-					const formData = new FormData(event.target);
-					const formObject = {is_private: (event.submitter.name === 'private_reply' ? 1 : 0)};
-					formData.forEach((value, key) => {
-						formObject[key] = value;
-					});
-					app.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, formObject.spend);
-				});
-				chatDiv.appendChild(replyLink);
-				chatDiv.appendChild(replyForm);
-				threadContainer.appendChild(chatDiv);
-				setTimeout(load_invoice_selectors,50);
+	//fetch(`${settings.server_url}/get_thread_chats?thread_id=${threadId}`)
+	// change to post
+	const formData = new FormData();
+	formData.append('thread_id', threadId);
+	if (password) formData.append('password', password);
+	fetch(`${settings.server_url}/get_thread_chats`, {
+		method: 'POST',
+		body: formData
+	}).then(response => {
+		if (response.ok) {
+			return response.text();
+		} else {
+			console.log(response);
+			throw new Error('Network response was not ok');
+		}
+	}).then(json => {
+		const data = JSON.parse(json);
+		console.log({data});
+		if (data.error) {
+			app.feed(`Error: ${data.error}`, true);
+			return;
+		}
+		app.feed(data.msg);
+		const threadChats = data.chats;
+		threadContainer.innerHTML = '';
+		threadChats.forEach(chat => {
+			console.log({chat});
+			const chatDiv = document.createElement('div');
+			chatDiv.classList.add('chat');
+			const replyToLink = chat.reply_to_id? `<a href="#chat_id_${chat.reply_to_id}" style="padding-left:4px;">^${chat.reply_to_id}</a>`: '';
+			chatDiv.innerHTML = `<p><strong>${chat.chat_id}${replyToLink}</strong><br>${chat.chat_content}</p>`;
+			// Reply Form and link to toggle reply form
+			const replyLink = document.createElement('a');
+			replyLink.textContent = 'Reply';
+			replyLink.href = '#';
+			replyLink.addEventListener('click', (event) => {
+				event.preventDefault();
+				const form = chatDiv.querySelector('.reply_form');
+				form.style.display = form.style.display === 'none'? 'block': 'none';
 			});
-		})
-		.catch(error => {
-			app.feed('There has been a problem with your fetch operation. See console.', true);
-			console.error(error);
+			const replyForm = document.createElement('form');
+			replyForm.style.display = 'none';
+			replyForm.classList.add('reply_form');
+			replyForm.innerHTML = `
+				<input type="hidden" name="thread_id" value="${threadId}">
+				<select name="captcha_id" class="invoice_selector"></select>
+				<input type="hidden" name="reply_to" value="${chat.chat_id}">
+				<textarea name="content" placeholder="Reply..."></textarea>
+				<input type="number" name="spend" placeholder="Super Chat Spend in USD (optional)">
+				<input type="submit" name="reply" value="Reply">
+				<input type="submit" name="private_reply" value="Send as Private Message">
+			`;
+			replyForm.addEventListener('submit', (event) => {
+				event.preventDefault();
+				const formData = new FormData(event.target);
+				const formObject = {is_private: (event.submitter.name === 'private_reply' ? 1 : 0)};
+				formData.forEach((value, key) => {
+					formObject[key] = value;
+				});
+				app.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, formObject.spend);
+			});
+			chatDiv.appendChild(replyLink);
+			chatDiv.appendChild(replyForm);
+			threadContainer.appendChild(chatDiv);
+			setTimeout(load_invoice_selectors,50);
 		});
-	}
-
+	})
+	.catch(error => {
+		app.feed('There has been a problem with your fetch operation. See console.', true);
+		console.error(error);
+	});
+}
 
 /* Listeners */
 document.getElementById('tab-home').addEventListener('click', () => showTab('home'));
@@ -611,48 +670,4 @@ document.getElementById('create_thread_form').addEventListener('submit', (event)
 		formObject[key] = value;
 	});
 	app.createThread(formObject.captcha_id,formObject.content,formObject.password,formObject.css);
-});
-document.getElementById('all_thread_loader').addEventListener('click', () => {
-	const url = app.getCurrentURL();
-	// send this to the get_threads endpoint
-	const settings = app.getSettings();
-	fetch(`${settings.server_url}/get_threads?url=${encodeURIComponent(url)}`)
-		.then(response => {
-			if (response.ok) {
-				return response.text();
-			} else {
-				throw new Error('Network response was not ok');
-			}
-		})
-		.then(json => {
-			const data = JSON.parse(json);
-			console.log({data});
-			if (data.error) {
-				app.feed(`Error: ${data.error}`, true);
-				return;
-			}
-			app.feed(data.msg);
-			const threads = data.threads;
-			const threadContainer = document.getElementById('thread_container');
-			threadContainer.innerHTML = '';
-			threads.forEach(thread => {
-				const threadDiv = document.createElement('div');
-				threadDiv.classList.add('thread');
-				threadDiv.innerHTML = `<p>${thread.chat_content}</p>`;
-				threadContainer.appendChild(threadDiv);
-				loadThreadLink = document.createElement('a');
-				loadThreadLink.textContent = 'Load Thread';
-				loadThreadLink.setAttribute('data-thread-id', thread.thread_id);
-				loadThreadLink.addEventListener('click', () => {
-					// Get thread chats from the /get_thread_chats endpoint
-					const threadId = loadThreadLink.getAttribute('data-thread-id');
-					load_thread(threadId);
-				});
-				threadDiv.appendChild(loadThreadLink);
-			});
-		})
-		.catch(error => {
-			app.feed('There has been a problem with your fetch operation. See console.', true);
-			console.error(error);
-		});
 });
