@@ -535,6 +535,7 @@ function showTab(tabId) {
 			content.classList.remove('active');
 		}
 	});
+	this.rebuildInvoiceList();
 }
 
 function load_invoice_selectors(){
@@ -628,7 +629,6 @@ function load_thread(threadId, password = null){
 		console.error(error);
 	});
 }
-
 /* Listeners */
 document.getElementById('tab-home').addEventListener('click', () => showTab('home'));
 document.getElementById('tab-buy').addEventListener('click', () => showTab('buy'));
