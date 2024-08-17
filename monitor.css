@@ -133,3 +133,12 @@ a:hover {
 .pull-right {
   float:right;
 }
+
+.reaction_link_span, .reaction_link_span a {
+  color: rgb(151, 151, 151);
+  text-decoration: none;
+  cursor: pointer;
+}
+.my_reaction {
+  color: rgb(1, 64, 54) !important;
+}

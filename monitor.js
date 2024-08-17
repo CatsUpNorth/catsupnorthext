@@ -5,7 +5,7 @@ class AppState {
 		this.settingsSchema 	= {};
 		this.passCache			= {}; // Password attempts by thread id
 		this.settingsDefault 	= {
-		    server_url:             null,
+		    server_url:             "https://catsupnorth.com",
 			thread_refresh_rate: 	3000,
 			autoload_threads: 		false,
 			url_preview_max_len: 	50,
@@ -87,7 +87,6 @@ class AppState {
 	buyKeys(val, curr) {
 		const settings 	= this.getSettings();
 		const buyEndpoint 	= `${settings.server_url}/buy?val=${encodeURIComponent(val)}&cur=${encodeURIComponent(curr)}`;
-		console.log('buy endpoint ',buyEndpoint);
 		fetch(buyEndpoint)
 			.then(response => {
 				if (response.ok) {
@@ -98,7 +97,6 @@ class AppState {
 			})
 			.then(jsonData => { //  Expected: { "captcha_id": None, "secret": None, "error": None }
 				const data = JSON.parse(jsonData);
-				console.log('/buy response:', data);	
 				const captchaId 		= data.captcha_id 		|| null;
 				const secret			= data.secret			|| null;
 				const error 			= data.error			|| null;
@@ -156,7 +154,6 @@ class AppState {
 		const settings 			= this.getSettings();
 		const recoverEndpoint 	= `${settings.server_url}/recover_invoice`;
 		const formObj			= new FormData(form);
-		console.log('recovering invoice with form:', formObj);
 		fetch(recoverEndpoint, {
 			method: 'POST',
 			body: formObj
@@ -248,6 +245,163 @@ class AppState {
 		}).catch(error => {
 			this.feed('There has been a problem with your post operation. See console.', true);
 			console.error(error);
+		});
+	}
+	
+	reactDiv(chat_id){
+		const container = document.createElement('div');
+		const heightFixer = document.createElement('span');
+		heightFixer.classList.add('reaction_height_fixer');
+		heightFixer.innerHTML = '&nbsp;';
+		container.appendChild(heightFixer);
+		container.classList.add('reaction_container');
+		const linkSpan = document.createElement('span');
+		linkSpan.classList.add('reaction_link_span');
+		linkSpan.classList.add('pull-right');
+		const likeButton = document.createElement('a');
+		likeButton.href = '#';
+		likeButton.classList.add('reaction_button');
+		likeButton.classList.add('like_button');
+		likeButton.innerHTML = this.heroicon('hand-thumb-up').outerHTML;
+		likeButton.setAttribute('data-chat-id', chat_id);
+		likeButton.style.paddingRight = '5px';
+		const likeCount = document.createElement('span');
+		likeCount.classList.add('reaction_count');
+		likeCount.classList.add('like_count');
+		likeCount.textContent = '0';
+		likeCount.setAttribute('data-chat-id', chat_id);
+		const dislikeButton = document.createElement('a');
+		dislikeButton.href = '#';
+		dislikeButton.classList.add('reaction_button');
+		dislikeButton.classList.add('dislike_button');
+		dislikeButton.innerHTML = this.heroicon('hand-thumb-down').outerHTML;
+		dislikeButton.setAttribute('data-chat-id', chat_id);
+		dislikeButton.style.paddingRight = '5px';
+		dislikeButton.style.paddingLeft = '10px';
+		const dislikeCount = document.createElement('span');
+		dislikeCount.classList.add('reaction_count');
+		dislikeCount.classList.add('dislike_count');
+		dislikeCount.textContent = '0';
+		dislikeCount.setAttribute('data-chat-id', chat_id);
+		linkSpan.appendChild(likeButton);
+		linkSpan.appendChild(likeCount);
+		linkSpan.appendChild(dislikeButton);
+		linkSpan.appendChild(dislikeCount);
+		container.appendChild(linkSpan);
+		return container;
+	}
+
+	updateReactions(reactions){
+		if(!reactions || !Array.isArray(reactions)) return;
+
+		// Get invoice_ids for invoices that have secrets
+		var my_invoice_ids = [];
+		for (let name in this.state.invoices) {
+			if(this.state.invoices[name].secret && typeof this.state.invoices[name].secret == 'string' && this.state.invoices[name].secret.length > 0){
+				var invoice = this.state.invoices[name];
+				if(!('repo' in invoice) || !invoice.repo || typeof invoice.repo != 'string' || invoice.repo.length < 3) continue
+				var repo_split = invoice.repo.split(' ');
+				if(repo_split.length < 1 || isNaN(repo_split[0]*1)) continue;
+				my_invoice_ids.push(repo_split[0]*1);
+			}
+		}
+		if(my_invoice_ids.length <= 0) return;
+
+		for (var i=0; i<reactions.length; i++){
+			const reaction = reactions[i];
+			if(!reaction || typeof reaction != 'object' || !('chat_ref_id' in reaction) || !('vote' in reaction) || !('invoice_ref_id' in reaction)) continue;
+			try{
+				const chatId = reaction.chat_ref_id;
+				const vote = reaction.vote;
+				const inv = reaction.invoice_ref_id*1;
+				switch(vote.toString().toLowerCase()){
+					case 'up':
+						var btn = document.querySelector(`.like_button[data-chat-id="${chatId}"]`);
+						var cnt = document.querySelector(`.like_count[data-chat-id="${chatId}"]`);
+						if(cnt && !isNaN(cnt.textContent*1)) cnt.textContent = (cnt.textContent*1 + 1).toString();
+						if(my_invoice_ids.indexOf(inv) > -1) btn.classList.add('my_reaction');
+						break;
+					case 'down':
+						var btn = document.querySelector(`.dislike_button[data-chat-id="${chatId}"]`);
+						var cnt = document.querySelector(`.dislike_count[data-chat-id="${chatId}"]`);
+						if(cnt && !isNaN(cnt.textContent*1)) cnt.textContent = (cnt.textContent*1 + 1).toString();
+						if(my_invoice_ids.indexOf(inv) > -1) btn.classList.add('my_reaction');
+						break;
+					default:;
+				}
+			}catch(e){
+				console.error(e);
+				continue;
+			}
+		}
+
+		// Add event listeners to reaction buttons
+		const likeButtons = document.querySelectorAll('.reaction_button');
+		console.log(likeButtons);
+		likeButtons.forEach((button) => {
+			console.log(button);
+			button.addEventListener('click', (event) => {
+				event.preventDefault();
+				console.log('event.currentTarget',event.currentTarget.classList.contains('my_reaction'));
+				if(event.currentTarget.classList.contains('my_reaction')) return; // user already reacted
+				event.currentTarget.classList.add('my_reaction');
+				console.log('event.currentTarget',event.currentTarget.classList.contains('my_reaction'));
+				const counter = event.currentTarget.nextElementSibling;
+				console.log('counter',counter,counter.classList.contains('reaction_count'),!isNaN(counter.textContent*1));
+				if(counter.classList.contains('reaction_count') && !isNaN(counter.textContent*1)){
+					// preemtively increment the counter
+					counter.textContent = (counter.textContent*1 + 1).toString();
+				}
+
+				// If the user liked and had already disliked, remove the dislike
+				const findClass = event.currentTarget.classList.contains('like_button')? 'dislike_button': 'like_button';
+				const sibling = event.currentTarget.parentElement.querySelectorAll(`.reaction_button.${findClass}`);
+				console.log('sibling',sibling, sibling.classList.contains('reaction_button'), sibling.classList.contains('my_reaction'));
+				if(sibling && sibling.classList.contains('reaction_button') && sibling.classList.contains('my_reaction')){
+					sibling.classList.remove('my_reaction');
+					const siblingCounter = sibling.nextElementSibling;
+					console.log('siblingCounter',siblingCounter, siblingCounter.classList.contains('reaction_count'), !isNaN(siblingCounter.textContent*1));
+					if(siblingCounter.classList.contains('reaction_count') && !isNaN(siblingCounter.textContent*1) && siblingCounter.textContent*1 > 0){
+						siblingCounter.textContent = (siblingCounter.textContent*1 - 1).toString();
+					}
+				}
+				const settings = this.getSettings();
+				const reactEndpoint = `${settings.server_url}/chat_react`;
+				const formData = new FormData();
+				const chatId = event.currentTarget.getAttribute('data-chat-id');
+				const reaction = event.currentTarget.classList.contains('like_button')? 'up': 'down';
+				formData.append('chat_id', chatId);
+				formData.append('vote', reaction);
+				//formData.append('emoji', null); // TODO: Add emoji support later after added to backend.
+				for(var name in app.state.invoices){
+					if(!name || name.length < 1) continue;
+					var inv = app.state.invoices[name];
+					if(!inv || !inv.secret || typeof inv.secret !== 'string' || inv.secret.length < 1) continue;
+					if(!inv.repo || typeof inv.repo !== 'string' || inv.repo.length < 1) continue;
+					formData.append('captcha_id', name);
+					formData.append('secret', inv.secret);
+				}
+				fetch(reactEndpoint, {
+					method: 'POST',
+					body: formData
+				}).then(response => {
+					if (response.ok) {
+						return response.text();
+					} else {
+						throw new Error('Network response was not ok');
+					}
+				}).then(json => {
+					const data = JSON.parse(json);
+					if (data.error) {
+						this.feed(`Error: ${data.error}`, true);
+					} else {
+						this.feed(data.msg);
+					}
+				}).catch(error => {
+					this.feed('There has been a problem with your fetch operation. See console.', true);
+					console.error(error);
+				});
+			});
 		});
 	}
 
@@ -344,9 +498,14 @@ class AppState {
 				chatDiv.appendChild(document.createElement('br'));
 				chatDiv.appendChild(chatContent);
 				chatDiv.appendChild(replyForm);
+
+				// Likes and dislikes
+				chatDiv.appendChild(app.reactDiv(chat.chat_id));
+
 				threadContainer.appendChild(chatDiv);
 				setTimeout(load_invoice_selectors,50);
 			});
+			app.updateReactions(data.reactions);
 		})
 		.catch(error => {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
@@ -387,7 +546,6 @@ class AppState {
 				threads.forEach(thread => {
 					const threadDiv = document.createElement('div');
 					threadDiv.classList.add('thread');
-					threadContainer.appendChild(threadDiv);
 					var alias_str = '';
 					if('alias' in thread && thread.alias && typeof thread.alias == 'string'){
 						alias_str = `&nbsp;&nbsp;<strong style="color:#183f36;">${thread.alias}</strong>`;
@@ -431,7 +589,13 @@ class AppState {
 						}
 					});
 					threadDiv.appendChild(loadThreadLink);
+
+					// Likes and dislikes
+					threadDiv.appendChild(app.reactDiv(thread.chat_id,data.reactions));
+
+					threadContainer.appendChild(threadDiv);
 				});
+				app.updateReactions(data.reactions);
 			})
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
@@ -786,9 +950,16 @@ function show_tab(tabId) {
 	});
 
 	switch(tabId) {
-		case 'home': 		app.getThreads();
-		case 'buy': 		app.rebuildInvoiceList();
-		case 'settings': 	app.rebuildSettingsForm();
+		case 'home':
+			app.getThreads();
+			load_invoice_selectors();
+			break;
+		case 'buy':
+			app.rebuildInvoiceList();
+			break;
+		case 'settings':
+			app.rebuildSettingsForm();
+			break;
 		default:;
 	}
 
@@ -808,6 +979,7 @@ function load_invoice_selectors(){
 			var invoice = invoices[captchaId];
 			var balance = (invoice.balance && !isNaN(invoice.balance))? invoice.balance: 0;
 			if(balance <= 0) continue;
+			if(invoice.server_url !== app.getSettings().server_url) continue;
 			var cur_bal = '0.00';
 			if(balance && 'exchange_rate' in invoice && invoice.exchange_rate && !isNaN(invoice.exchange_rate) && 'currency_pair' in invoice && invoice.currency_pair && typeof invoice.currency_pair == 'string'){
 				cur_bal = (balance * invoice.exchange_rate / 100000000).toFixed(2);
@@ -877,7 +1049,6 @@ document.getElementById('tab-buy').addEventListener('click', 		() => show_tab('b
 document.getElementById('tab-settings').addEventListener('click', 	() => show_tab('settings'));
 document.getElementById('buy_form').addEventListener('submit', 		(event) => {
 	event.preventDefault();
-	console.log(document.getElementById('buy_val').value,document.getElementById('buy_curr').value);
 	app.buyKeys(document.getElementById('buy_val').value, document.getElementById('buy_curr').value);
 });
 document.getElementById('settings_form').addEventListener('submit', (event) => {
