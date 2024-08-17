@@ -106,7 +106,13 @@ a {
   text-decoration:underline;
 }
 a:hover {
-  opacity:0.5;
+  opacity:0.7;
+}
+.chat a{
+  opacity: 0.5;
+}
+.chat a:hover{
+  opacity: 1;
 }
 
 .thread, .chat {
@@ -114,6 +120,16 @@ a:hover {
   padding: 5px;
   background-color: rgb(255, 244, 213);
   margin-bottom: 5px;
-  font-size:8px;
+  font-size:11px;
   border-radius:3px;
+}
+.thread_opener {
+  text-decoration: none;
+  cursor: pointer;
+}
+.invoice[data-balance="0"] {
+  background-color: rgb(255,110,110);
+}
+.pull-right {
+  float:right;
 }
