@@ -188,6 +188,13 @@ class AppState {
 		});
 	}
 
+	rollupInvoices(form){
+		const settings 			= this.getSettings();
+		const recoverEndpoint 	= `${settings.server_url}/recover_invoice`;
+		const formObj			= new FormData(form);
+		return null;
+	}
+
 	// Create a thread
 	createThread(captcha_id, description, password, css) {
 		this.sendChat(captcha_id, description, 0, 0, 0, password, css);
@@ -305,9 +312,18 @@ class AppState {
 				my_invoice_ids.push(repo_split[0]*1);
 			}
 		}
-		if(my_invoice_ids.length <= 0) return;
+		if(my_invoice_ids.length <= 0){ // User cannot react without a secret
+			const likeButtons = document.querySelectorAll('.reaction_button');
+			likeButtons.forEach((button) => {
+				button.addEventListener('click', (event) => {
+					event.preventDefault();
+					this.feed('You must have an invoice secret.', true);
+				});
+			});
+			return;
+		};
 
-		for (var i=0; i<reactions.length; i++){
+		for (var i=0; i<reactions.length; i++){ // label my reactions
 			const reaction = reactions[i];
 			if(!reaction || typeof reaction != 'object' || !('chat_ref_id' in reaction) || !('vote' in reaction) || !('invoice_ref_id' in reaction)) continue;
 			try{
@@ -337,17 +353,12 @@ class AppState {
 
 		// Add event listeners to reaction buttons
 		const likeButtons = document.querySelectorAll('.reaction_button');
-		console.log(likeButtons);
 		likeButtons.forEach((button) => {
-			console.log(button);
 			button.addEventListener('click', (event) => {
 				event.preventDefault();
-				console.log('event.currentTarget',event.currentTarget.classList.contains('my_reaction'));
 				if(event.currentTarget.classList.contains('my_reaction')) return; // user already reacted
 				event.currentTarget.classList.add('my_reaction');
-				console.log('event.currentTarget',event.currentTarget.classList.contains('my_reaction'));
 				const counter = event.currentTarget.nextElementSibling;
-				console.log('counter',counter,counter.classList.contains('reaction_count'),!isNaN(counter.textContent*1));
 				if(counter.classList.contains('reaction_count') && !isNaN(counter.textContent*1)){
 					// preemtively increment the counter
 					counter.textContent = (counter.textContent*1 + 1).toString();
@@ -355,12 +366,10 @@ class AppState {
 
 				// If the user liked and had already disliked, remove the dislike
 				const findClass = event.currentTarget.classList.contains('like_button')? 'dislike_button': 'like_button';
-				const sibling = event.currentTarget.parentElement.querySelectorAll(`.reaction_button.${findClass}`);
-				console.log('sibling',sibling, sibling.classList.contains('reaction_button'), sibling.classList.contains('my_reaction'));
+				const sibling = event.currentTarget.parentElement.querySelector(`.reaction_button.${findClass}`);
 				if(sibling && sibling.classList.contains('reaction_button') && sibling.classList.contains('my_reaction')){
 					sibling.classList.remove('my_reaction');
 					const siblingCounter = sibling.nextElementSibling;
-					console.log('siblingCounter',siblingCounter, siblingCounter.classList.contains('reaction_count'), !isNaN(siblingCounter.textContent*1));
 					if(siblingCounter.classList.contains('reaction_count') && !isNaN(siblingCounter.textContent*1) && siblingCounter.textContent*1 > 0){
 						siblingCounter.textContent = (siblingCounter.textContent*1 - 1).toString();
 					}
@@ -372,7 +381,6 @@ class AppState {
 				const reaction = event.currentTarget.classList.contains('like_button')? 'up': 'down';
 				formData.append('chat_id', chatId);
 				formData.append('vote', reaction);
-				//formData.append('emoji', null); // TODO: Add emoji support later after added to backend.
 				for(var name in app.state.invoices){
 					if(!name || name.length < 1) continue;
 					var inv = app.state.invoices[name];
@@ -806,7 +814,7 @@ class AppState {
 
 			if(invoice.repo){
 				const repoElement = document.createElement('a');
-				repoElement.textContent = `Copy Seed to Clipboard`;
+				repoElement.textContent = `Seed`;
 				repoElement.href = '#';
 				repoElement.addEventListener('click', (e) => {
 					e.preventDefault();
@@ -891,6 +899,72 @@ class AppState {
 				});
 			});
 			invoiceDiv.appendChild(redeemLink);
+
+			// Request payout link
+			const payoutLink = document.createElement('a');
+			payoutLink.textContent = `Payout`;
+			payoutLink.href = '#';
+			payoutLink.style.paddingLeft = '10px';
+			payoutLink.classList.add('invoice_payout_link');
+			payoutLink.setAttribute("data-captcha-id",name);
+			payoutLink.addEventListener('click', (e) => {
+				// Get the captcha ID from the clicked element
+				const captchaId 	= e.currentTarget.getAttribute('data-captcha-id');
+				const secret 		= this.state.invoices[captchaId].secret
+				const sentToAddress = prompt('Enter the BTC address to send the funds to:');
+				console.log(sentToAddress, secret, captchaId);
+				if (!sentToAddress){
+					this.feed("Action Cancelled.");
+					return;
+				};
+				if(typeof sentToAddress !== 'string' || sentToAddress.trim().length < 26){
+					this.feed("BTC receiving address must be at least 26 characters.");
+					return;
+				}
+				const settings = this.getSettings();
+				const payoutEndpoint = `${settings.server_url}/get_funds`;
+				const formData = new FormData();
+				formData.append('captcha_id', captchaId);
+				formData.append('secret', secret);
+				formData.append('send_to_address', sentToAddress.trim());
+				// Send the POST request to redeem the invoice
+				fetch(payoutEndpoint, {
+					method: 'POST',
+					body: formData
+				}).then(response => {
+					if (response.ok) {
+						return response.text();
+					} else {
+						throw new Error('Network response was not ok');
+					}
+				}).then(json => {
+					const data = JSON.parse(json);
+					if(data.error){
+						this.feed(`Error: ${data.error.toString()}`, true);
+						return;
+					}
+					if(data.msg) this.feed(data.msg);
+					const req = data.payout_request;
+					console.log({req});
+					if(
+						!req || typeof req != 'object' || 
+						!("satoshi_withdrawal" in req) || !req.satoshi_withdrawal || isNaN(req.satoshi_withdrawal*1) ||
+						!("send_to_address" in req) || !req.send_to_address || typeof req.send_to_address != 'string' || req.send_to_address.length < 26 || 
+						!("btcpay_id" in req) || !req.btcpay_id || typeof req.btcpay_id != 'string' || req.btcpay_id.length < 3
+					){
+						this.feed('There was a problem with the payout request.', true);
+						return;
+					}
+					req.satoshi_withdrawal = req.satoshi_withdrawal*1;
+					this.state.invoices[captchaId].payout_requests = data.payout_requests || [];
+					this.state.invoices[captchaId].payout_requests.push(req);
+					this.rebuildInvoiceList();
+				}).catch(error => {
+					this.feed('There has been a problem with your fetch operation. See console.', true);
+					console.error(error);
+				});
+			});
+			invoiceDiv.appendChild(payoutLink);
 
 			// Append the invoice div to the container
 			container.appendChild(invoiceDiv);
@@ -1106,3 +1180,23 @@ const recoverIcon = app.heroicon('arrow-path');
 const recoverToggle = document.getElementById('recover_invoice_toggle');
 recoverIcon.style.paddingLeft = '5px';
 recoverToggle.appendChild(recoverIcon);
+
+// Invoice rollup
+document.getElementById('rollup_invoice_toggle').addEventListener('click', () => {
+	const rollup_form = document.getElementById('rollup_invoice_form');
+	if(rollup_form.style.display === 'none'){
+		rollup_form.style.display = 'block';
+	}else{
+		rollup_form.style.display = 'none';
+	}
+});
+document.getElementById('rollup_invoice_form').addEventListener('submit', (event) => {
+	event.preventDefault();
+	const form = event.target;
+	app.rollupInvoices(form);
+	form.style.display = 'none';
+});
+const rollupIcon = app.heroicon('arrow-uturn-up');
+const rollupToggle = document.getElementById('rollup_invoice_toggle');
+rollupIcon.style.paddingLeft = '5px';
+rollupToggle.appendChild(rollupIcon);

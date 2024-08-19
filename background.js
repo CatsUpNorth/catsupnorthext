@@ -1,5 +1,7 @@
 let windowId;
 
+/*
+// popup version
 chrome.action.onClicked.addListener(() => {
   if (!windowId) {
     chrome.windows.create({
@@ -13,6 +15,16 @@ chrome.action.onClicked.addListener(() => {
   } else {
     chrome.windows.update(windowId, { focused: true });
   }
+});
+*/
+
+// sidebar version
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.sidePanel.setOptions({ path: welcomePage });
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+});
+chrome.action.onClicked.addListener(async ({ tabId }) => {
+  
 });
 
 chrome.windows.onRemoved.addListener((id) => {
