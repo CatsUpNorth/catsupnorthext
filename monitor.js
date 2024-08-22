@@ -243,7 +243,7 @@ class AppState {
 				this.loadThread(currentThreadId,this.getCachedPass(currentThreadId));
 			}else if(create_thread_form.style.display !== 'none'){
 				document.getElementById('create_thread_toggle_link').click();
-				ducument.getElementById('thread_content_input').value = '';
+				document.getElementById('thread_content_input').value = '';
 				this.getThreads();
 			}else{
 				this.feed("ERROR: Thread ID not found.", true);
