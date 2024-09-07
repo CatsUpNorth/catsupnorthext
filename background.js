@@ -20,11 +20,11 @@ chrome.action.onClicked.addListener(() => {
 
 // sidebar version
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setOptions({ path: welcomePage });
+  chrome.sidePanel.setOptions({ path: 'monitor.html'});
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 });
 chrome.action.onClicked.addListener(async ({ tabId }) => {
-  
+  logTabUrl(tabId);
 });
 
 chrome.windows.onRemoved.addListener((id) => {

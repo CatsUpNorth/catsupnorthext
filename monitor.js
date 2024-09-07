@@ -11,6 +11,7 @@ class AppState {
 			url_preview_max_len: 	50,
 			min_spend_threshold: 	1
 		};
+		this.skipFeed 			= false; // skip feed message if true only once (set back to false just before feed method exits early)
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
 		this.settingsSchema.server_url = 'string';
 		this.loadState();
@@ -97,6 +98,7 @@ class AppState {
 			})
 			.then(jsonData => { //  Expected: { "captcha_id": None, "secret": None, "error": None }
 				const data = JSON.parse(jsonData);
+				console.log('/buy data: ', data);
 				const captchaId 		= data.captcha_id 		|| null;
 				const secret			= data.secret			|| null;
 				const error 			= data.error			|| null;
@@ -130,12 +132,14 @@ class AppState {
 				input.type = 'hidden';
 				input.name = 'captcha_id';
 				input.value = captchaId;
+				console.log(captchaId);
 
 				// Create in input element for the secret
 				const secretInput = document.createElement('input');
 				secretInput.type = 'hidden';
 				secretInput.name = 'secret';
 				secretInput.value = secret;
+				console.log(secret);
 
 				// Append the input to the form, append the form to the body (needed for submission), submit, and then remove.
 				form.appendChild(input);
@@ -186,6 +190,16 @@ class AppState {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
 			console.error(error);
 		});
+	}
+
+	deleteNoLinkInvoices(){
+		for (let name in this.state.invoices) {
+			if(!this.state.invoices[name].link || this.state.invoices[name].link.length < 1){
+				delete this.state.invoices[name];
+			}
+		}
+		this.saveState();
+		this.rebuildInvoiceList();
 	}
 
 	rollupInvoices(form){
@@ -440,6 +454,7 @@ class AppState {
 			}
 		}).then(json => {
 			const data = JSON.parse(json);
+			console.log(data);
 			if (data.error) {
 				this.feed(`Error: ${data.error}`, true);
 				return;
@@ -465,14 +480,25 @@ class AppState {
 			threadChats.forEach(chat => {
 				const chatDiv = document.createElement('div');
 				chatDiv.classList.add('chat');
+
 				const reply_to_link	= chat.reply_to_id? `<a href="#chat_id_${chat.reply_to_id}">^${chat.reply_to_id}</a>`: '';
 				const alias_str 	= (chat.alias && typeof chat.alias == 'string')? `&nbsp;&nbsp;<strong style="color:#183f36;">${chat.alias}</strong>`: '';
 				chatDiv.innerHTML 	= `<strong>${chat.chat_id}${reply_to_link}</strong>${alias_str}`;
+
+				const chatContent = document.createElement('span');
+				chatContent.textContent = chat.chat_content;
+				chatDiv.appendChild(document.createElement('br'));
+				chatDiv.appendChild(chatContent);
+				// Likes and dislikes
+				const reactionContainer = app.reactDiv(chat.chat_id);
+				chatDiv.appendChild(document.createElement('br'));
+				chatDiv.appendChild(document.createElement('br'));
+				chatDiv.appendChild(reactionContainer);
+
 				// Reply Form and link to toggle reply form
 				const replyLink = document.createElement('a');
-				replyLink.appendChild(this.heroicon('megaphone'));
-				replyLink.title = 'Reply';
-				replyLink.classList.add('pull-right');
+				replyLink.appendChild(this.heroicon('chat-bubble-bottom-center-text'));
+				replyLink.appendChild(document.createTextNode(' Reply'));
 				replyLink.href = '#';
 				replyLink.addEventListener('click', (event) => {
 					event.preventDefault();
@@ -500,15 +526,10 @@ class AppState {
 					});
 					this.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, formObject.spend);
 				});
-				chatDiv.appendChild(replyLink);
-				const chatContent = document.createElement('span');
-				chatContent.textContent = chat.chat_content;
-				chatDiv.appendChild(document.createElement('br'));
-				chatDiv.appendChild(chatContent);
+				var heightFixer = reactionContainer.getElementsByClassName('reaction_height_fixer').item(0)
+				heightFixer.innerHTML = "";
+				heightFixer.appendChild(replyLink);
 				chatDiv.appendChild(replyForm);
-
-				// Likes and dislikes
-				chatDiv.appendChild(app.reactDiv(chat.chat_id));
 
 				threadContainer.appendChild(chatDiv);
 				setTimeout(load_invoice_selectors,50);
@@ -599,7 +620,16 @@ class AppState {
 					threadDiv.appendChild(loadThreadLink);
 
 					// Likes and dislikes
-					threadDiv.appendChild(app.reactDiv(thread.chat_id,data.reactions));
+					var reactionContainer = app.reactDiv(thread.chat_id,data.reactions)
+					threadDiv.appendChild(reactionContainer);
+
+					// Comment Count
+					if(thread.comment_count && !isNaN(thread.comment_count*1) && thread.comment_count > 0){
+						const heightFixer = reactionContainer.getElementsByClassName('reaction_height_fixer').item(0);
+						heightFixer.innerHTML = '<br>' + this.heroicon('chat-bubble-bottom-center-text').outerHTML + '&nbsp;' + thread.comment_count;
+						heightFixer.style.paddingLeft = '5px';
+						heightFixer.style.fontWeight = '600';
+					}
 
 					threadContainer.appendChild(threadDiv);
 				});
@@ -674,6 +704,10 @@ class AppState {
 	}
 	
 	feed(arg, err = false){
+		if(this.skipFeed){ // used when autoloading threads or chats right after user action
+			this.skipFeed = false;
+			return;
+		}
 		if(err) console.trace(arg,err);
 		const f 		= document.getElementById('feed');
 		f.innerHTML 	= arg.toString();
@@ -912,7 +946,6 @@ class AppState {
 				const captchaId 	= e.currentTarget.getAttribute('data-captcha-id');
 				const secret 		= this.state.invoices[captchaId].secret
 				const sentToAddress = prompt('Enter the BTC address to send the funds to:');
-				console.log(sentToAddress, secret, captchaId);
 				if (!sentToAddress){
 					this.feed("Action Cancelled.");
 					return;
@@ -945,7 +978,6 @@ class AppState {
 					}
 					if(data.msg) this.feed(data.msg);
 					const req = data.payout_request;
-					console.log({req});
 					if(
 						!req || typeof req != 'object' || 
 						!("satoshi_withdrawal" in req) || !req.satoshi_withdrawal || isNaN(req.satoshi_withdrawal*1) ||

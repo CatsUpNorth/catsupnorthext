@@ -1,26 +1,30 @@
 body {
   font-family: Arial, sans-serif;
-  padding: 10px;
+  background-color: rgb(69, 85, 79);
 }
 
 .tab-container {
-  border-radius:3px;
   display: flex;
+  width:100%;
+  border: 2px solid rgb(1, 50, 42);
+  border-radius:5px;
   justify-content: space-between;
   background-color: rgb(1, 64, 54);
-  padding: 10px;
-  margin-bottom: 10px;
 }
 
 .tab {
-  border-radius:3px;
+  border-radius:5px;
   flex: 1;
-  padding: 10px;
+  padding: 4px;
   text-align: center;
   cursor: pointer;
   color: rgb(255, 244, 213);
   border: 1px solid rgb(1, 64, 54);
   border-bottom: none;
+}
+
+.tab:hover {
+  background-color: rgb(0, 51, 43);
 }
 
 .tab.active {
@@ -30,7 +34,7 @@ body {
 }
 
 .tab-content {
-  border-radius:3px;
+  border-radius:5px;
   display: none;
   border: 1px solid rgb(1, 64, 54);
   padding: 10px;
@@ -42,13 +46,12 @@ body {
 }
 
 #feed {
-  border-radius:3px;
-  border: 1px solid rgb(1, 64, 54);
-  padding: 10px;
-  background-color: rgb(255, 244, 213);
-  margin-bottom: 10px;
-  font-size:8px;
+  padding: 4px;
+  margin-top:4px;
+  margin-bottom: 4px;
+  font-size:9px;
   overflow:hidden;
+  color: rgb(255, 244, 213) !important;
 }
 
 form {
@@ -103,7 +106,7 @@ form button[type="submit"]:hover {
 a {
   cursor:pointer !important;
   color:blue;
-  text-decoration:underline;
+  text-decoration:none;
 }
 a:hover {
   opacity:0.7;
@@ -116,12 +119,16 @@ a:hover {
 }
 
 .thread, .chat {
-  border: 1px solid rgb(1, 64, 54);
   padding: 5px;
-  background-color: rgb(255, 244, 213);
   margin-bottom: 5px;
   font-size:11px;
-  border-radius:3px;
+  border-radius:5px;
+}
+.thread {
+  background-color: rgb(224, 199, 129);
+}
+.chat {
+  background-color: rgb(157, 201, 169);
 }
 .thread_opener {
   text-decoration: none;
