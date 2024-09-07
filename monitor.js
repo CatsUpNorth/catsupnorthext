@@ -5,13 +5,14 @@ class AppState {
 		this.settingsSchema 	= {};
 		this.passCache			= {}; // Password attempts by thread id
 		this.settingsDefault 	= {
-		    server_url:             "https://catsupnorth.com",
+		    server_url:             "https://catsupnorth.com", // fallback server url
 			thread_refresh_rate: 	3000,
 			autoload_threads: 		false,
 			url_preview_max_len: 	50,
 			min_spend_threshold: 	1
 		};
 		this.skipFeed 			= false; // skip feed message if true only once (set back to false just before feed method exits early)
+		this.skipLoadThreads 	= false; // skip loading threads if true only once (set back to false just before loadThreads method exits early)
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
 		this.settingsSchema.server_url = 'string';
 		this.loadState();
@@ -35,17 +36,34 @@ class AppState {
 			this.rebuildSettingsForm();
 			this.rebuildInvoiceList();
 
-			chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => { 
-				if (tabs.length > 0){
-					this.updateCurrentUserURL(tabs[0].url, false);
-					this.getThreads(this.state.current_user_url);
-				}
-			});
+			try{
+				chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => { 
+					if (tabs.length > 0){
+						this.updateCurrentUserURL(tabs[0].url, false);
+						this.getThreads(this.state.current_user_url);
+					}
+				});
+			}catch(e){
+				// do nothing
+			}
 		});
 	}
 
 	// Save the current state to chrome.storage.local
 	saveState() {
+
+		this.state.my_invoice_ids = [];
+		// Get all the invoices that have secrets and get the ID from the start of the string
+		for (let name in this.state.invoices) {
+			if(this.state.invoices[name].secret && typeof this.state.invoices[name].secret == 'string' && this.state.invoices[name].secret.length > 0){
+				var invoice = this.state.invoices[name];
+				if(!('repo' in invoice) || !invoice.repo || typeof invoice.repo != 'string' || invoice.repo.length < 3) continue
+				var repo_split = invoice.repo.split(' ');
+				if(repo_split.length < 1 || isNaN(repo_split[0]*1)) continue;
+				this.state.my_invoice_ids.push(repo_split[0]*1);
+			}
+		}
+
 		chrome.storage.local.set(this.state, () => {
 			if (chrome.runtime.lastError) {
 				console.error('Error saving state:', chrome.runtime.lastError);
@@ -98,7 +116,6 @@ class AppState {
 			})
 			.then(jsonData => { //  Expected: { "captcha_id": None, "secret": None, "error": None }
 				const data = JSON.parse(jsonData);
-				console.log('/buy data: ', data);
 				const captchaId 		= data.captcha_id 		|| null;
 				const secret			= data.secret			|| null;
 				const error 			= data.error			|| null;
@@ -132,19 +149,18 @@ class AppState {
 				input.type = 'hidden';
 				input.name = 'captcha_id';
 				input.value = captchaId;
-				console.log(captchaId);
 
 				// Create in input element for the secret
 				const secretInput = document.createElement('input');
 				secretInput.type = 'hidden';
 				secretInput.name = 'secret';
 				secretInput.value = secret;
-				console.log(secret);
 
 				// Append the input to the form, append the form to the body (needed for submission), submit, and then remove.
 				form.appendChild(input);
 				form.appendChild(secretInput);
 				document.body.appendChild(form);
+				this.skipLoadThreads = true;
 				form.submit();
 				document.body.removeChild(form);
 			})
@@ -230,6 +246,15 @@ class AppState {
 		formData.append('thread_id', thread_id);
 		formData.append('password', password);
 		formData.append('css', css);
+		if(!reply_to){
+			formData.append('metadata_title', 		this.state.current_metadata?.title 			|| '');
+			formData.append('metadata_description', this.state.current_metadata?.description 	|| '');
+			formData.append('metadata_author', 		this.state.current_metadata?.author 		|| '');
+			formData.append('metadata_favicon', 	this.state.current_metadata?.favicon 		|| '');
+			formData.append('metadata_date', 		this.state.current_metadata?.datePublished 	|| '');
+			formData.append('metadata_image', 		this.state.current_metadata?.image 			|| '');
+			formData.append('metadata_language', 	this.state.current_metadata?.language 		|| '');
+		}
 		fetch(chatEndpoint, {
 			method: 'POST',
 			body: formData
@@ -240,6 +265,7 @@ class AppState {
 				throw new Error('Network response was not ok');
 			}
 		}).then(json => {
+			this.updateTCHeight(); // housekeeping
 			const data = JSON.parse(json);
 			if (data.error) {
 				this.feed(`Error: ${data.error}`, true);
@@ -254,10 +280,12 @@ class AppState {
 				currentThreadId = !isNaN(currentThreadId*1)? currentThreadId*1: 0;
 			}
 			if(currentThreadId){
+				this.skipFeed = true;
 				this.loadThread(currentThreadId,this.getCachedPass(currentThreadId));
 			}else if(create_thread_form.style.display !== 'none'){
 				document.getElementById('create_thread_toggle_link').click();
 				document.getElementById('thread_content_input').value = '';
+				this.skipFeed = true;
 				this.getThreads();
 			}else{
 				this.feed("ERROR: Thread ID not found.", true);
@@ -271,6 +299,7 @@ class AppState {
 	
 	reactDiv(chat_id){
 		const container = document.createElement('div');
+		container.appendChild(document.createElement('br'));
 		const heightFixer = document.createElement('span');
 		heightFixer.classList.add('reaction_height_fixer');
 		heightFixer.innerHTML = '&nbsp;';
@@ -453,50 +482,63 @@ class AppState {
 				throw new Error('Network response was not ok');
 			}
 		}).then(json => {
+			this.updateTCHeight(); // housekeeping
 			const data = JSON.parse(json);
-			console.log(data);
 			if (data.error) {
 				this.feed(`Error: ${data.error}`, true);
 				return;
 			}
 			this.feed(data.msg);
 			const threadChats = data.chats;
+			// order chats by id ASC
+			threadChats.sort((a, b) => a.chat_id - b.chat_id);
 			// TODO: Sort by date updated
 			const backLink = document.createElement('a');
-			backLink.textContent = 'Go back to threads';
+			backLink.textContent = '‹ Go back to threads';
 			backLink.href = '#';
 			backLink.addEventListener('click', (event) => {
 				this.getThreads();
 			})
-			const threadLabel = document.createElement('h2');
+			const threadLabel = document.createElement('strong');
 			threadLabel.innerHTML = `Thread <span id="cur_thread_id_container">${threadId}</span>`;
+			threadLabel.classList.add('pull-right');
 			threadContainer.innerHTML = '';
-			threadContainer.appendChild(backLink);
-			threadContainer.appendChild(document.createElement('br'));
-			threadContainer.appendChild(document.createElement('br'));
-			threadContainer.appendChild(threadLabel);
-			threadContainer.appendChild(document.createElement('br'));
-			threadContainer.appendChild(document.createElement('br'));
+			threadContainer.classList.add('thread');
 			threadChats.forEach(chat => {
 				const chatDiv = document.createElement('div');
-				chatDiv.classList.add('chat');
+				if(chat.reply_to_id){
+					chatDiv.classList.add('chat');
+				}else{
+					chatDiv.classList.add('thread');
+					chatDiv.style.boxShadow = 'none';
+					chatDiv.style.border = 'none';
+				}
+				chatDiv.setAttribute('data-id', `${chat.chat_id}`);
+				chatDiv.setAttribute('data-reply-to-id', `${chat.reply_to_id}`);
+				if(chat.superchat && !isNaN(chat.superchat*1) && chat.superchat > 0){
+					chatDiv.classList.add('superchat');
+				}
+				if(chat.invoice_id && this.state.my_invoice_ids.indexOf(chat.invoice_id*1) > -1){
+					const hasThreadClass = chatDiv.classList.contains('thread');
+					chatDiv.classList.add((hasThreadClass? 'my_thread': 'my_chat'));
+				}
 
-				const reply_to_link	= chat.reply_to_id? `<a href="#chat_id_${chat.reply_to_id}">^${chat.reply_to_id}</a>`: '';
+				//const reply_to_link	= chat.reply_to_id? `<a href="#chat_id_${chat.reply_to_id}">&nbsp;^${chat.reply_to_id}</a>`: '';
 				const alias_str 	= (chat.alias && typeof chat.alias == 'string')? `&nbsp;&nbsp;<strong style="color:#183f36;">${chat.alias}</strong>`: '';
-				chatDiv.innerHTML 	= `<strong>${chat.chat_id}${reply_to_link}</strong>${alias_str}`;
+				//chatDiv.innerHTML 	= `<strong>${chat.chat_id}${reply_to_link}</strong>${alias_str}`;
+				chatDiv.innerHTML 	= `<span style="font-size:9px;opacity:0.6;"><strong>${chat.chat_id}</strong>${alias_str}</span>`;
 
-				const chatContent = document.createElement('span');
+				const chatContent = document.createElement('strong');
 				chatContent.textContent = chat.chat_content;
 				chatDiv.appendChild(document.createElement('br'));
 				chatDiv.appendChild(chatContent);
 				// Likes and dislikes
 				const reactionContainer = app.reactDiv(chat.chat_id);
-				chatDiv.appendChild(document.createElement('br'));
-				chatDiv.appendChild(document.createElement('br'));
 				chatDiv.appendChild(reactionContainer);
 
 				// Reply Form and link to toggle reply form
 				const replyLink = document.createElement('a');
+				replyLink.classList.add('chat_reply_link');
 				replyLink.appendChild(this.heroicon('chat-bubble-bottom-center-text'));
 				replyLink.appendChild(document.createTextNode(' Reply'));
 				replyLink.href = '#';
@@ -508,15 +550,40 @@ class AppState {
 				const replyForm = document.createElement('form');
 				replyForm.style.display = 'none';
 				replyForm.classList.add('reply_form');
+				var sendSVG = this.heroicon('send');
+				sendSVG = sendSVG? sendSVG.outerHTML: 'Send';
 				replyForm.innerHTML = `
 					<input type="hidden" name="thread_id" value="${threadId}">
-					<select name="captcha_id" class="invoice_selector"></select>
+					<select name="captcha_id" class="invoice_selector mini"></select>
 					<input type="hidden" name="reply_to" value="${chat.chat_id}">
-					<textarea name="content" placeholder="Reply..."></textarea>
-					<input type="number" name="spend" placeholder="Super Chat Spend in USD (optional)">
-					<input type="submit" name="reply" value="Reply">
-					<input type="submit" name="private_reply" value="Send as Private Message">
+					<div class="reply_form_super_chat_input_container hidden" id="spend_on_chat_${chat.chat_id}">
+						<input type="number" name="spend" placeholder="Super Chat Spend in USD">
+					</div>
+					<input type="text" name="content" id="reply_text_input_${chat.chat_id}" placeholder="Reply...">
+					<br>&nbsp;
+					<span class="pull-right">
+						<a id="send_reply_btn_${chat.chat_id}" title="Send message!">
+							${sendSVG}
+						</a>
+						<a id="send_money_btn_${chat.chat_id}" title="Add Bitcoin to make this a super chat!">
+							₿
+						</a>
+						<a id="send_dm_btn_${chat.chat_id}" title="Private Message">
+							PM
+						</a>
+						<input type="submit" name="reply" value="Send" style="display:none;" id="chat_reply_submit_${chat.chat_id}">
+					</span>
 				`;
+				const replyTextInput 	= document.getElementById(`reply_text_input_${chat.chat_id}`);
+				const sendReplyBtn 		= document.getElementById(`send_reply_btn_${chat.chat_id}`);
+				const sendMoneyBtn 		= document.getElementById(`send_money_btn_${chat.chat_id}`);
+				const sendDMBtn 		= document.getElementById(`send_dm_btn_${chat.chat_id}`);
+				if(sendReplyBtn){
+					sendReplyBtn.addEventListener('click', (event) => {
+						event.preventDefault();
+						event.currentTarget.parentElement.querySelector('input[type="submit"]').click();
+					});
+				}
 				replyForm.addEventListener('submit', (event) => {
 					event.preventDefault();
 					const formData = new FormData(event.target);
@@ -535,6 +602,66 @@ class AppState {
 				setTimeout(load_invoice_selectors,50);
 			});
 			app.updateReactions(data.reactions);
+
+			// created embedded reply_to_clone divs
+			const allChatDivs = threadContainer.querySelectorAll('.chat');
+			allChatDivs.forEach((chatDiv) => {
+				const replyToId = chatDiv.getAttribute('data-reply-to-id');
+				const replyToDiv = threadContainer.querySelector(`.chat[data-id="${replyToId}"]`);
+				if(!replyToDiv) return;
+				// Clone the replied-to chat and prepend it to the current chatDiv
+				const replyToClone = replyToDiv.cloneNode(true);
+				replyToClone.classList.add('replied_to_clone');
+				replyToClone.removeAttribute('data-reply-to-id');
+				replyToClone.removeAttribute('data-id');
+
+				// remove .reaction_container div from the clone
+				const reactionContainer = replyToClone.querySelector('.reaction_container');
+				if(reactionContainer) reactionContainer.remove();
+
+				// remove .replied_to_clone div from the clone
+				const repliedToClone = replyToClone.querySelector('.replied_to_clone');
+				if(repliedToClone) repliedToClone.remove();
+
+				// remove .reply_form div from the clone
+				const replyForm = replyToClone.querySelector('.reply_form');
+				if(replyForm) replyForm.remove();
+
+				chatDiv.insertBefore(replyToClone, chatDiv.firstChild);
+			});
+
+			// Take the reply form from the last chat and put it at end of threadContainer
+			const firstThreadDiv = threadContainer.querySelector('.thread');
+			if(firstThreadDiv){
+				const replyForm = firstThreadDiv.querySelector('.reply_form');
+				const replyLink = firstThreadDiv.querySelector('.chat_reply_link');
+				if(replyLink){
+					replyLink.innerHTML = "&nbsp;";
+				}
+				if(replyForm){ // Remove the reply form from the first .thread and add it to the end of the threadContainer
+					const textInput = replyForm.querySelector('textarea[name="content"]');
+					if (textInput) textInput.placeholder = 'Reply to thread...';
+					const replyBtn = replyForm.querySelector('input[name="reply"]');
+					if (replyBtn) replyBtn.value = 'Send';
+					replyForm.remove();
+					replyForm.style.display = 'block';
+					threadContainer.appendChild(document.createElement('br'));
+					threadContainer.appendChild(replyForm);
+				}
+				const firstChat = threadContainer.getElementsByClassName('chat');
+				if(firstChat){
+					firstThreadDiv.remove();
+					threadContainer.appendChild(firstThreadDiv);
+				}
+			}
+
+			threadContainer.appendChild(document.createElement('br'));
+			threadContainer.appendChild(document.createElement('br'));
+			threadContainer.appendChild(backLink);
+			threadContainer.appendChild(threadLabel);
+
+			// scroll to btm of thread_container
+			document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
 		})
 		.catch(error => {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
@@ -542,9 +669,14 @@ class AppState {
 		});
 	}
 
-	getThreads(url_arg){
-		document.getElementById('create_thread_container').style.display = 'inline-block';
-		this.feed("");
+	getThreads(url_arg, metadata){
+		this.updateCurrentMetadata(metadata);
+		if(this.skipLoadThreads){
+			this.skipLoadThreads = false;
+			return;
+		}
+		const create_thread_container = document.getElementById('create_thread_container');
+		if(create_thread_container) create_thread_container.style.display = 'inline-block';
 		if(url_arg) this.updateCurrentUserURL(url_arg);
 		const url = this.getCurrentURL();
 		if(!url){
@@ -563,6 +695,7 @@ class AppState {
 				}
 			})
 			.then(json => {
+				this.updateTCHeight(); // housekeeping
 				const data = JSON.parse(json);
 				if (data.error) {
 					this.feed(`Error: ${data.error}`, true);
@@ -570,18 +703,26 @@ class AppState {
 				}
 				this.feed(data.msg);
 				const threads = data.threads;
+
+				// Order threads by thread_id ASC
+				threads.sort((a, b) => a.thread_id - b.thread_id);
+
 				const threadContainer = document.getElementById('thread_container');
 				threadContainer.innerHTML = '';
+				threadContainer.classList.remove('thread');
 				threads.forEach(thread => {
 					const threadDiv = document.createElement('div');
 					threadDiv.classList.add('thread');
+					if(thread.invoice_id && this.state.my_invoice_ids.indexOf(thread.invoice_id*1) > -1){
+						threadDiv.classList.add('my_thread');
+					}
 					var alias_str = '';
 					if('alias' in thread && thread.alias && typeof thread.alias == 'string'){
 						alias_str = `&nbsp;&nbsp;<strong style="color:#183f36;">${thread.alias}</strong>`;
 					}
 					const password_xml = thread.password_required? this.heroicon('lock-closed').outerHTML: '';
 					const loadThreadLink = document.createElement('a');
-					loadThreadLink.innerHTML = `<strong style="color:grey;">${thread.thread_id}.${thread.chat_id}</strong>${alias_str}<span class="pull-right">${password_xml}</span><br>${thread.chat_content}`;
+					loadThreadLink.innerHTML = `<span style="font-size:9px;opacity:0.6;"><strong style="color:grey;">${thread.thread_id}.${thread.chat_id}</strong>${alias_str}<span class="pull-right">${password_xml}</span></span><br><strong>${thread.chat_content}</strong>`;
 					loadThreadLink.setAttribute('data-thread-id', thread.thread_id);
 					loadThreadLink.classList.add('thread_opener');
 					if(thread.password_required) loadThreadLink.classList.add('password_required');
@@ -626,7 +767,7 @@ class AppState {
 					// Comment Count
 					if(thread.comment_count && !isNaN(thread.comment_count*1) && thread.comment_count > 0){
 						const heightFixer = reactionContainer.getElementsByClassName('reaction_height_fixer').item(0);
-						heightFixer.innerHTML = '<br>' + this.heroicon('chat-bubble-bottom-center-text').outerHTML + '&nbsp;' + thread.comment_count;
+						heightFixer.innerHTML = this.heroicon('chat-bubble-bottom-center-text').outerHTML + '&nbsp;' + thread.comment_count;
 						heightFixer.style.paddingLeft = '5px';
 						heightFixer.style.fontWeight = '600';
 					}
@@ -634,11 +775,21 @@ class AppState {
 					threadContainer.appendChild(threadDiv);
 				});
 				app.updateReactions(data.reactions);
+				// scroll to btm of thread_container
+				document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
 			})
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
 				console.error(error);
 			});
+	}
+
+	updateTCHeight(){
+		// adjust the height of #thread_container to fit the window (make sure the page has no y scrollbar)
+		const tc 	= document.getElementById('thread_container')
+		const top_y = tc.getBoundingClientRect().top*1;
+		const win_h = window.innerHeight*1;
+		tc.style.height = (win_h - top_y - 50) + "px";
 	}
 
 	// Update settings
@@ -702,6 +853,11 @@ class AppState {
 		document.getElementById('current_url').innerHTML 	= this.getShortURL();
 		this.saveState();
 	}
+
+	updateCurrentMetadata(metadata){
+		this.state.current_metadata = (!metadata || typeof metadata != 'object')? {}: metadata;
+		this.saveState();
+	}
 	
 	feed(arg, err = false){
 		if(this.skipFeed){ // used when autoloading threads or chats right after user action
@@ -710,6 +866,7 @@ class AppState {
 		}
 		if(err) console.trace(arg,err);
 		const f 		= document.getElementById('feed');
+		if(!f) return;
 		f.innerHTML 	= arg.toString();
 		f.title		 	= arg.toString();
 		f.style.color 	= err? "rgb(255,0,0)": "rgb(1,64,54)";
@@ -717,6 +874,7 @@ class AppState {
 	
 	rebuildSettingsForm() {
         const form = document.getElementById('settings_form');
+		if(!form) return;
         form.innerHTML = ''; // Clear the form
 
         for (let key in this.state.settings) {
@@ -778,6 +936,7 @@ class AppState {
 	
 	rebuildInvoiceList(){
 		const container = document.getElementById('invoice_container');
+		if(!container) return;
         container.innerHTML = '';
 		var total_invoices = 0, server_invoices = 0;
 		const date_sorted_invoice_keys = Object.keys(this.state.invoices).sort((a, b) => {
@@ -1030,7 +1189,8 @@ const app = new AppState();
 
 /* Extension functionality */
 chrome.runtime.onMessage.addListener((message) => {
-	if (message.url) app.getThreads(message.url);
+	console.log('Received message:', message);
+	if (message.url) app.getThreads(message.url, message.metadata);
 });
 
 /* Named functions */
@@ -1149,86 +1309,88 @@ function load_invoice_selectors(){
 		}
 	}
 }
-/* Listeners */
-document.getElementById('tab-home').addEventListener('click', 		() => show_tab('home'));
-document.getElementById('tab-buy').addEventListener('click', 		() => show_tab('buy'));
-document.getElementById('tab-settings').addEventListener('click', 	() => show_tab('settings'));
-document.getElementById('buy_form').addEventListener('submit', 		(event) => {
-	event.preventDefault();
-	app.buyKeys(document.getElementById('buy_val').value, document.getElementById('buy_curr').value);
-});
-document.getElementById('settings_form').addEventListener('submit', (event) => {
-	event.preventDefault();
-	const form = event.target;
-	const formData = new FormData(form);
-	const formObject = {};
-	formData.forEach((value, key) => {
-		formObject[key] = value;
+/* Listeners (add after doc ready) */
+document.addEventListener('DOMContentLoaded', () => {
+	document.getElementById('tab-home').addEventListener('click', 		() => show_tab('home'));
+	document.getElementById('tab-buy').addEventListener('click', 		() => show_tab('buy'));
+	document.getElementById('tab-settings').addEventListener('click', 	() => show_tab('settings'));
+	document.getElementById('buy_form').addEventListener('submit', 		(event) => {
+		event.preventDefault();
+		app.buyKeys(document.getElementById('buy_val').value, document.getElementById('buy_curr').value);
 	});
-	app.updateSettings(formObject);
-});
-document.getElementById('create_thread_toggle_link').addEventListener('click', () => {
-	// toggle #create_thread_form
-	const form = document.getElementById('create_thread_form');
-	const link = document.getElementById('create_thread_toggle_link');
-	const form_is_visible = form.style.display !== 'none';
-	if (form_is_visible){
-		link.textContent 	= '⨤ Create Thread';
-		form.style.display 	= 'none';
-	} else {
-		// Add invoice captcha_ids to .invoice_selector dropdown
-		load_invoice_selectors();
-		link.textContent 		= '🗙 Hide Form';
-		form.style.display		= 'block';
-	}
-});
-document.getElementById('create_thread_form').addEventListener('submit', (event) => {
-	event.preventDefault();
-	const form = event.target;
-	const formData = new FormData(form);
-	const formObject = {};
-	formData.forEach((value, key) => {
-		formObject[key] = value;
+	document.getElementById('settings_form').addEventListener('submit', (event) => {
+		event.preventDefault();
+		const form = event.target;
+		const formData = new FormData(form);
+		const formObject = {};
+		formData.forEach((value, key) => {
+			formObject[key] = value;
+		});
+		app.updateSettings(formObject);
 	});
-	app.createThread(formObject.captcha_id,formObject.content,formObject.password,formObject.css);
+	document.getElementById('create_thread_toggle_link').addEventListener('click', () => {
+		// toggle #create_thread_form
+		const form = document.getElementById('create_thread_form');
+		const link = document.getElementById('create_thread_toggle_link');
+		const form_is_visible = form.style.display !== 'none';
+		if (form_is_visible){
+			link.textContent 	= '⨤ Create Thread';
+			form.style.display 	= 'none';
+		} else {
+			// Add invoice captcha_ids to .invoice_selector dropdown
+			load_invoice_selectors();
+			link.textContent 		= '🗙 Hide Form';
+			form.style.display		= 'block';
+		}
+	});
+	document.getElementById('create_thread_form').addEventListener('submit', (event) => {
+		event.preventDefault();
+		const form = event.target;
+		const formData = new FormData(form);
+		const formObject = {};
+		formData.forEach((value, key) => {
+			formObject[key] = value;
+		});
+		app.createThread(formObject.captcha_id,formObject.content,formObject.password,formObject.css);
+	});
+	
+	// invoice recovery
+	document.getElementById('recover_invoice_toggle').addEventListener('click', () => {
+		const recovery_form = document.getElementById('recover_invoice_form');
+		if(recovery_form.style.display === 'none'){
+			recovery_form.style.display = 'block';
+		}else{
+			recovery_form.style.display = 'none';
+		}
+	});
+	document.getElementById('recover_invoice_form').addEventListener('submit', (event) => {
+		event.preventDefault();
+		const form = event.target;
+		app.recoverInvoice(form);
+		form.style.display = 'none';
+	});
+	const recoverIcon = app.heroicon('arrow-path');
+	const recoverToggle = document.getElementById('recover_invoice_toggle');
+	recoverIcon.style.paddingLeft = '5px';
+	recoverToggle.appendChild(recoverIcon);
+	
+	// Invoice rollup
+	document.getElementById('rollup_invoice_toggle').addEventListener('click', () => {
+		const rollup_form = document.getElementById('rollup_invoice_form');
+		if(rollup_form.style.display === 'none'){
+			rollup_form.style.display = 'block';
+		}else{
+			rollup_form.style.display = 'none';
+		}
+	});
+	document.getElementById('rollup_invoice_form').addEventListener('submit', (event) => {
+		event.preventDefault();
+		const form = event.target;
+		app.rollupInvoices(form);
+		form.style.display = 'none';
+	});
+	const rollupIcon = app.heroicon('arrow-uturn-up');
+	const rollupToggle = document.getElementById('rollup_invoice_toggle');
+	rollupIcon.style.paddingLeft = '5px';
+	rollupToggle.appendChild(rollupIcon);
 });
-
-// invoice recovery
-document.getElementById('recover_invoice_toggle').addEventListener('click', () => {
-	const recovery_form = document.getElementById('recover_invoice_form');
-	if(recovery_form.style.display === 'none'){
-		recovery_form.style.display = 'block';
-	}else{
-		recovery_form.style.display = 'none';
-	}
-});
-document.getElementById('recover_invoice_form').addEventListener('submit', (event) => {
-	event.preventDefault();
-	const form = event.target;
-	app.recoverInvoice(form);
-	form.style.display = 'none';
-});
-const recoverIcon = app.heroicon('arrow-path');
-const recoverToggle = document.getElementById('recover_invoice_toggle');
-recoverIcon.style.paddingLeft = '5px';
-recoverToggle.appendChild(recoverIcon);
-
-// Invoice rollup
-document.getElementById('rollup_invoice_toggle').addEventListener('click', () => {
-	const rollup_form = document.getElementById('rollup_invoice_form');
-	if(rollup_form.style.display === 'none'){
-		rollup_form.style.display = 'block';
-	}else{
-		rollup_form.style.display = 'none';
-	}
-});
-document.getElementById('rollup_invoice_form').addEventListener('submit', (event) => {
-	event.preventDefault();
-	const form = event.target;
-	app.rollupInvoices(form);
-	form.style.display = 'none';
-});
-const rollupIcon = app.heroicon('arrow-uturn-up');
-const rollupToggle = document.getElementById('rollup_invoice_toggle');
-rollupIcon.style.paddingLeft = '5px';
-rollupToggle.appendChild(rollupIcon);
