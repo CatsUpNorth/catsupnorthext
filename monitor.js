@@ -236,7 +236,6 @@ class AppState {
 		const currentURL 	= this.getCurrentURL();
 		const chatEndpoint 	= `${settings.server_url}/send_chat`;
 		const formData 		= new FormData();
-		if(!password) password = this.getCachedPass(thread_id);
 		formData.append('captcha_id', captcha_id);
 		formData.append('secret', this.state.invoices[captcha_id].secret);
 		formData.append('content', content.toString());
@@ -244,7 +243,6 @@ class AppState {
 		formData.append('url', currentURL);
 		formData.append('reply_to', reply_to);
 		formData.append('thread_id', thread_id);
-		formData.append('password', password);
 		formData.append('css', css);
 		if(!reply_to){
 			formData.append('metadata_title', 		this.state.current_metadata?.title 			|| '');
@@ -254,6 +252,12 @@ class AppState {
 			formData.append('metadata_date', 		this.state.current_metadata?.datePublished 	|| '');
 			formData.append('metadata_image', 		this.state.current_metadata?.image 			|| '');
 			formData.append('metadata_language', 	this.state.current_metadata?.language 		|| '');
+			if(password){ // Don't send cached password if it's a new thread
+				formData.append('password', password);
+			}
+		}else{
+			if(!password) password = this.getCachedPass(thread_id);
+			formData.append('password', password);
 		}
 		fetch(chatEndpoint, {
 			method: 'POST',
@@ -697,6 +701,7 @@ class AppState {
 			.then(json => {
 				this.updateTCHeight(); // housekeeping
 				const data = JSON.parse(json);
+				console.log(data);
 				if (data.error) {
 					this.feed(`Error: ${data.error}`, true);
 					return;
@@ -1007,7 +1012,8 @@ class AppState {
 
 			if(invoice.repo){
 				const repoElement = document.createElement('a');
-				repoElement.textContent = `Seed`;
+				repoElement.textContent = `⭳⭳`;
+				repoElement.title = "Copy Recovery Phrase to clipboard";
 				repoElement.href = '#';
 				repoElement.addEventListener('click', (e) => {
 					e.preventDefault();
@@ -1025,7 +1031,8 @@ class AppState {
 
 			if(invoice.link){
 				const invoiceLink = document.createElement('a');
-				invoiceLink.textContent = `Open`;
+				invoiceLink.textContent = `🗎`;
+				invoiceLink.title = "Open Invoice";
 				invoiceLink.href = invoice.link;
 				invoiceLink.target = '_blank';
 				invoiceLink.style.paddingLeft = '10px';
@@ -1033,7 +1040,8 @@ class AppState {
 			}
 
 			const redeemLink = document.createElement('a');
-			redeemLink.textContent = `Redeem`;
+			redeemLink.textContent = `🗘`;
+			redeemLink.title = "Redeem/Refresh this invoice";
 			redeemLink.href = '#';
 			redeemLink.style.paddingLeft = '10px';
 			redeemLink.classList.add('invoice_redeem_link');
@@ -1095,7 +1103,8 @@ class AppState {
 
 			// Request payout link
 			const payoutLink = document.createElement('a');
-			payoutLink.textContent = `Payout`;
+			payoutLink.textContent = `₿`;
+			payoutLink.title = "Request a payout for this invoice";
 			payoutLink.href = '#';
 			payoutLink.style.paddingLeft = '10px';
 			payoutLink.classList.add('invoice_payout_link');
