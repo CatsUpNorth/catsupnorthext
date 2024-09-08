@@ -123,6 +123,7 @@ a:hover {
   padding: 5px;
   margin-bottom: 21px;
   border-radius:5px;
+  border: 1px solid rgb(1, 64, 54);
 }
 .thread {
   font-size:14px;

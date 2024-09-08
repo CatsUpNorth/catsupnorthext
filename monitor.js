@@ -488,6 +488,7 @@ class AppState {
 		}).then(json => {
 			this.updateTCHeight(); // housekeeping
 			const data = JSON.parse(json);
+			console.log(data);
 			if (data.error) {
 				this.feed(`Error: ${data.error}`, true);
 				return;
@@ -516,6 +517,7 @@ class AppState {
 					chatDiv.classList.add('thread');
 					chatDiv.style.boxShadow = 'none';
 					chatDiv.style.border = 'none';
+					chatDiv.style.backgroundColor = 'rgba(0,0,0,0)';
 				}
 				chatDiv.setAttribute('data-id', `${chat.chat_id}`);
 				chatDiv.setAttribute('data-reply-to-id', `${chat.reply_to_id}`);
@@ -550,6 +552,9 @@ class AppState {
 					event.preventDefault();
 					const form = chatDiv.querySelector('.reply_form');
 					form.style.display = form.style.display === 'none'? 'block': 'none';
+					// focus on the first text input
+					const textInput = form.querySelector('input[type="text"]');
+					if(textInput) textInput.focus();
 				});
 				const replyForm = document.createElement('form');
 				replyForm.style.display = 'none';
@@ -643,7 +648,7 @@ class AppState {
 					replyLink.innerHTML = "&nbsp;";
 				}
 				if(replyForm){ // Remove the reply form from the first .thread and add it to the end of the threadContainer
-					const textInput = replyForm.querySelector('textarea[name="content"]');
+					const textInput = replyForm.querySelector('input[name="content"]');
 					if (textInput) textInput.placeholder = 'Reply to thread...';
 					const replyBtn = replyForm.querySelector('input[name="reply"]');
 					if (replyBtn) replyBtn.value = 'Send';
@@ -651,6 +656,9 @@ class AppState {
 					replyForm.style.display = 'block';
 					threadContainer.appendChild(document.createElement('br'));
 					threadContainer.appendChild(replyForm);
+
+					// focus on the textInput
+					textInput.focus();
 				}
 				const firstChat = threadContainer.getElementsByClassName('chat');
 				if(firstChat){
