@@ -35,6 +35,6 @@
       "128": "images/icon-128.png"
     }
   },
-  "permissions": ["sidePanel", "tabs", "storage", "background", "scripting", "activeTab"],
+  "permissions": ["sidePanel", "tabs", "storage", "background", "scripting", "activeTab", "externally_connectable"],
   "host_permissions": ["https://*/", "http://*/"]
 }

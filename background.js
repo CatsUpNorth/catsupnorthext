@@ -61,3 +61,11 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.tabs.onActivated.addListener((activeInfo) => {
   logTabUrl(activeInfo.tabId);
 });
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "startCatsUpNorth") {
+    // Trigger your extension's functionality here
+    console.log("Extension function triggered from webpage.");
+    sendResponse({status: "Extension started"});
+  }
+});
