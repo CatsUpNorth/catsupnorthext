@@ -663,6 +663,13 @@ class AppState {
 
 				replyForm.addEventListener('submit', (event) => {
 
+					event.preventDefault();
+					const formData = new FormData(event.target);
+					const formObject = {is_private: (event.submitter.name === 'private_reply' ? 1 : 0)};
+					formData.forEach((value, key) => {
+						formObject[key] = value;
+					});
+
 					// Clear the inputs
 					const chat_id = event.target.getAttribute('data-chat-id');
 					const textInput = event.target.querySelector('input[name="content"]');
@@ -671,13 +678,7 @@ class AppState {
 					if (spendInput) spendInput.value = 0;
 					const dollarsInput = document.getElementById(`dollars_on_chat_${chat_id}`);
 					if (dollarsInput) dollarsInput.value = '';
-
-					event.preventDefault();
-					const formData = new FormData(event.target);
-					const formObject = {is_private: (event.submitter.name === 'private_reply' ? 1 : 0)};
-					formData.forEach((value, key) => {
-						formObject[key] = value;
-					});
+					
 					this.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, formObject.spend);
 				});
 				var heightFixer = reactionContainer.getElementsByClassName('reaction_height_fixer').item(0)
