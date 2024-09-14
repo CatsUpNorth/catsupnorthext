@@ -1,12 +1,16 @@
 /* App State */
 class AppState {
 	constructor() {
+		this.allow_refresh 		= true; // Allow the refresh of the threads and chats as long as the user is not filling out a form.
+		this.thread_interval 	= null;
+		this.chat_interval 		= null;
 		this.state				= {};
 		this.settingsSchema 	= {};
 		this.passCache			= {}; // Password attempts by thread id
 		this.settingsDefault 	= {
 		    server_url:             "https://catsupnorth.com", // fallback server url
-			thread_refresh_rate: 	3000,
+			thread_refresh_rate: 	60_000,
+			chat_refresh_rate: 		1000,
 			autoload_threads: 		false,
 			url_preview_max_len: 	50,
 			min_spend_threshold: 	1
@@ -35,6 +39,9 @@ class AppState {
 
 			this.rebuildSettingsForm();
 			this.rebuildInvoiceList();
+			this.startPolling();
+
+			// Create the thread and chat refresh intervals
 
 			try{
 				chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => { 
@@ -47,6 +54,28 @@ class AppState {
 				// do nothing
 			}
 		});
+	}
+	
+	startPolling(){
+		if(this.thread_interval) 	clearInterval(this.thread_interval);
+		if(this.chat_interval) 		clearInterval(this.chat_interval);
+		this.thread_interval = setInterval(() => {
+			if(!this.state.current_user_url) return;
+			if(document.getElementById('thread_container').classList.contains('thread')) return;
+			if(this.allow_refresh){
+				console.log('Refreshing threads...');
+				this.getThreads(this.state.current_user_url);
+			}
+		}, this.getSettings().thread_refresh_rate);
+		this.chat_interval = setInterval(() => {
+			if(!this.state.current_user_url) return;
+			if(!document.getElementById('thread_container').classList.contains('thread')) return;
+			if(document.getElementsByClassName('chat_reply_form_open').length > 0) return; // user is trying to reply to a chat
+			if(this.allow_refresh){
+				console.log('Refreshing chats...');
+				this.loadThread(this.getCurrentThreadID());
+			}
+		}, this.getSettings().chat_refresh_rate);
 	}
 
 	// Save the current state to chrome.storage.local
@@ -72,6 +101,8 @@ class AppState {
 
 		document.getElementById('server_link').href 		= this.getSettings().server_url;
 		document.getElementById('server_link').textContent 	= this.getSettings().server_url.replace(/https?:\/\//, '');
+
+		this.startPolling();
 	}
 
 	cachePass(thread_id, pass) { // TODO: Create a modal with input masking
@@ -277,12 +308,7 @@ class AppState {
 				this.feed('Message sent.');
 			}
 			const create_thread_form = document.getElementById('create_thread_form');
-			const currentThreadIdContainer = document.getElementById('cur_thread_id_container');
-			var currentThreadId = null;
-			if(currentThreadIdContainer){
-				currentThreadId = currentThreadIdContainer.textContent;
-				currentThreadId = !isNaN(currentThreadId*1)? currentThreadId*1: 0;
-			}
+			var currentThreadId = this.getCurrentThreadID();
 			if(currentThreadId){
 				this.skipFeed = true;
 				this.loadThread(currentThreadId,this.getCachedPass(currentThreadId));
@@ -461,21 +487,36 @@ class AppState {
 	}
 
 	loadThread(threadId, password = null){
+		console.log({threadId});
+		const startMode = threadId == this.getCurrentThreadID()? false: true;
+		threadId = threadId || this.getCurrentThreadID();
 		document.getElementById('create_thread_container').style.display = 'none';
+		document.getElementById('back_to_threads_bracket').style.display = 'inline-block';
 		// TODO Change to post to allow for password and css
 		const settings = this.getSettings();
 		const threadContainer = document.getElementById('thread_container');
+		const frozenThreadContainer = document.getElementById('frozen_thread_container');
 		//fetch(`${settings.server_url}/get_thread_chats?thread_id=${threadId}`)
 		// change to post
 		const formData = new FormData();
 		formData.append('thread_id', threadId);
 		if (password) formData.append('password', password);
 		const threadEndpoint = `${settings.server_url}/get_thread_chats`;
-		var test = {};
-		formData.forEach(function(value, key){
-			test[key] = value;
-		});
-		test = JSON.stringify(test);
+
+		const latestDateSubmitted = null;
+		if(startMode){
+			threadContainer.innerHTML = '';
+		}else{
+			const chatDivs = document.querySelector('.thread_container .chat');
+			if(chatDivs){
+				chatDivs.each((chat) => { latestDateSubmitted = chat.getAttribute('data-date-submitted'); });
+			}
+		}
+		if(latestDateSubmitted){
+			console.log({latestDateSubmitted});
+			formData.append('date_submitted_after', latestDateSubmitted);
+		}
+
 		fetch(threadEndpoint, {
 			method: 'POST',
 			body: formData
@@ -487,40 +528,34 @@ class AppState {
 			}
 		}).then(json => {
 			this.updateTCHeight(); // housekeeping
-			const data = JSON.parse(json);
-			console.log(data);
+			const data = typeof json == 'string'? JSON.parse(json): json;
 			if (data.error) {
 				this.feed(`Error: ${data.error}`, true);
 				return;
 			}
 			this.feed(data.msg);
 			const threadChats = data.chats;
-			// order chats by id ASC
-			threadChats.sort((a, b) => a.chat_id - b.chat_id);
-			// TODO: Sort by date updated
-			const backLink = document.createElement('a');
-			backLink.textContent = '‹ Go back to threads';
-			backLink.href = '#';
-			backLink.addEventListener('click', (event) => {
-				this.getThreads();
-			})
-			const threadLabel = document.createElement('strong');
-			threadLabel.innerHTML = `Thread <span id="cur_thread_id_container">${threadId}</span>`;
-			threadLabel.classList.add('pull-right');
-			threadContainer.innerHTML = '';
+			console.log({threadChats});
 			threadContainer.classList.add('thread');
 			threadChats.forEach(chat => {
+
+				// Do not add chats that are already in the thread
+				const existingChat = threadContainer.querySelector(`.chat[data-id="${chat.chat_id}"]`);
+				if(existingChat) return;
+
 				const chatDiv = document.createElement('div');
 				if(chat.reply_to_id){
 					chatDiv.classList.add('chat');
 				}else{
 					chatDiv.classList.add('thread');
+					chatDiv.classList.add('thread_parent_chat');
 					chatDiv.style.boxShadow = 'none';
 					chatDiv.style.border = 'none';
 					chatDiv.style.backgroundColor = 'rgba(0,0,0,0)';
 				}
 				chatDiv.setAttribute('data-id', `${chat.chat_id}`);
 				chatDiv.setAttribute('data-reply-to-id', `${chat.reply_to_id}`);
+				chatDiv.setAttribute('data-date-submitted', `${chat.date_submitted}`);
 				if(chat.superchat && !isNaN(chat.superchat*1) && chat.superchat > 0){
 					chatDiv.classList.add('superchat');
 				}
@@ -535,11 +570,12 @@ class AppState {
 				chatDiv.innerHTML 	= `<span style="font-size:9px;opacity:0.6;"><strong>${chat.chat_id}</strong>${alias_str}</span>`;
 
 				const chatContent = document.createElement('strong');
-				chatContent.textContent = chat.chat_content;
+				// render utf chars as emojies
+				chatContent.textContent = decodeHTMLEntities(chat.chat_content.toString());
 				chatDiv.appendChild(document.createElement('br'));
 				chatDiv.appendChild(chatContent);
 				// Likes and dislikes
-				const reactionContainer = app.reactDiv(chat.chat_id);
+				const reactionContainer = this.reactDiv(chat.chat_id);
 				chatDiv.appendChild(reactionContainer);
 
 				// Reply Form and link to toggle reply form
@@ -559,40 +595,72 @@ class AppState {
 				const replyForm = document.createElement('form');
 				replyForm.style.display = 'none';
 				replyForm.classList.add('reply_form');
+				replyForm.setAttribute('data-chat-id', chat.chat_id);
 				var sendSVG = this.heroicon('send');
 				sendSVG = sendSVG? sendSVG.outerHTML: 'Send';
+				var hideSVG = this.heroicon('eye-slash');
+				hideSVG = hideSVG? hideSVG.outerHTML: 'PM';
 				replyForm.innerHTML = `
 					<input type="hidden" name="thread_id" value="${threadId}">
 					<select name="captcha_id" class="invoice_selector mini"></select>
 					<input type="hidden" name="reply_to" value="${chat.chat_id}">
-					<div class="reply_form_super_chat_input_container hidden" id="spend_on_chat_${chat.chat_id}">
-						<input type="number" name="spend" placeholder="Super Chat Spend in USD">
-					</div>
 					<input type="text" name="content" id="reply_text_input_${chat.chat_id}" placeholder="Reply...">
-					<br>&nbsp;
-					<span class="pull-right">
-						<a id="send_reply_btn_${chat.chat_id}" title="Send message!">
-							${sendSVG}
-						</a>
-						<a id="send_money_btn_${chat.chat_id}" title="Add Bitcoin to make this a super chat!">
-							₿
-						</a>
-						<a id="send_dm_btn_${chat.chat_id}" title="Private Message">
-							PM
-						</a>
-						<input type="submit" name="reply" value="Send" style="display:none;" id="chat_reply_submit_${chat.chat_id}">
-					</span>
-				`;
-				const replyTextInput 	= document.getElementById(`reply_text_input_${chat.chat_id}`);
-				const sendReplyBtn 		= document.getElementById(`send_reply_btn_${chat.chat_id}`);
-				const sendMoneyBtn 		= document.getElementById(`send_money_btn_${chat.chat_id}`);
-				const sendDMBtn 		= document.getElementById(`send_dm_btn_${chat.chat_id}`);
-				if(sendReplyBtn){
-					sendReplyBtn.addEventListener('click', (event) => {
-						event.preventDefault();
-						event.currentTarget.parentElement.querySelector('input[type="submit"]').click();
-					});
-				}
+					<div class="reply_form_super_chat_input_container hidden" id="spend_on_chat_${chat.chat_id}_container">
+						<input type="number" placeholder="Super Chat Spend in USD" id="dollars_on_chat_${chat.chat_id}">
+						<input type="hidden" name="spend" value="0" id="spend_on_chat_${chat.chat_id}" name="spend" class="superchat_satoshi mini">
+						<span id="satoshi_str_on_chat_${chat.chat_id}"></span>
+					</div>
+					<br>&nbsp;<input type="submit" name="reply" value="" id="reply_text_submit_${chat.chat_id}" style="opacity:0;width:2px;height:2px;">`;
+
+				// Create send links
+				const replyLinkSpan = document.createElement('span');
+				replyLinkSpan.classList.add('pull-right');
+				const sendReplyLink = document.createElement('a');
+				sendReplyLink.href = '#';
+				sendReplyLink.classList.add('chat_reply_btn');
+				sendReplyLink.classList.add('send_reply_btn');
+				sendReplyLink.title = 'Send message!';
+				sendReplyLink.innerHTML = sendSVG;
+				sendReplyLink.setAttribute('data-chat-id', chat.chat_id);
+				sendReplyLink.addEventListener('click', (event) => {
+					event.preventDefault();
+					const chat_id = event.currentTarget.getAttribute('data-chat-id');
+					document.getElementById(`reply_text_submit_${chat_id}`).click();
+				});
+				// const sendDMLink = document.createElement('a');
+				// sendDMLink.href = '#';
+				// sendDMLink.classList.add('chat_reply_btn');
+				// sendDMLink.classList.add('send_dm_btn');
+				// sendDMLink.title = 'Private Message';
+				// sendDMLink.innerHTML = hideSVG;
+				// sendDMLink.setAttribute('data-chat-id', chat.chat_id);
+				const sendMoneyLink = document.createElement('a');
+				sendMoneyLink.href = '#';
+				sendMoneyLink.classList.add('chat_reply_btn');
+				sendMoneyLink.classList.add('send_money_btn');
+				sendMoneyLink.title = 'Add Bitcoin to make this a super chat!';
+				sendMoneyLink.style.fontSize = '18px';
+				sendMoneyLink.innerHTML = '₿';
+				sendMoneyLink.setAttribute('data-chat-id', chat.chat_id);
+				sendMoneyLink.addEventListener('click', (event) => {
+					event.preventDefault();
+					const chat_id = event.currentTarget.getAttribute('data-chat-id');
+					const superChatContainer = document.getElementById(`spend_on_chat_${chat_id}_container`);
+					superChatContainer.getElementsByTagName('input').item(0).value = "";
+					superChatContainer.getElementsByTagName('input').item(1).value = 0;
+					if(superChatContainer.classList.contains('hidden')){
+						superChatContainer.classList.remove('hidden');
+						superChatContainer.getElementsByTagName('input').item(0).focus();
+					}else{ // Zero out the input and hide the container and focus on the text input
+						superChatContainer.classList.add('hidden');
+						document.getElementById(`reply_text_input_${chat_id}`).focus();
+					}					
+				});
+				replyLinkSpan.appendChild(sendReplyLink);
+				//replyLinkSpan.appendChild(sendDMLink);
+				replyLinkSpan.appendChild(sendMoneyLink);
+				replyForm.appendChild(replyLinkSpan);
+
 				replyForm.addEventListener('submit', (event) => {
 					event.preventDefault();
 					const formData = new FormData(event.target);
@@ -610,11 +678,13 @@ class AppState {
 				threadContainer.appendChild(chatDiv);
 				setTimeout(load_invoice_selectors,50);
 			});
-			app.updateReactions(data.reactions);
+			this.updateReactions(data.reactions);
 
 			// created embedded reply_to_clone divs
 			const allChatDivs = threadContainer.querySelectorAll('.chat');
 			allChatDivs.forEach((chatDiv) => {
+				const childChats = chatDiv.querySelectorAll('.chat');
+				if(childChats.length < 1) return;
 				const replyToId = chatDiv.getAttribute('data-reply-to-id');
 				const replyToDiv = threadContainer.querySelector(`.chat[data-id="${replyToId}"]`);
 				if(!replyToDiv) return;
@@ -639,38 +709,52 @@ class AppState {
 				chatDiv.insertBefore(replyToClone, chatDiv.firstChild);
 			});
 
-			// Take the reply form from the last chat and put it at end of threadContainer
-			const firstThreadDiv = threadContainer.querySelector('.thread');
-			if(firstThreadDiv){
-				const replyForm = firstThreadDiv.querySelector('.reply_form');
-				const replyLink = firstThreadDiv.querySelector('.chat_reply_link');
-				if(replyLink){
-					replyLink.innerHTML = "&nbsp;";
-				}
-				if(replyForm){ // Remove the reply form from the first .thread and add it to the end of the threadContainer
-					const textInput = replyForm.querySelector('input[name="content"]');
-					if (textInput) textInput.placeholder = 'Reply to thread...';
-					const replyBtn = replyForm.querySelector('input[name="reply"]');
-					if (replyBtn) replyBtn.value = 'Send';
-					replyForm.remove();
-					replyForm.style.display = 'block';
-					threadContainer.appendChild(document.createElement('br'));
-					threadContainer.appendChild(replyForm);
+			if(startMode){
+				const threadParentChat = threadContainer.querySelector('.thread_parent_chat');
+				console.log({threadParentChat});
+				if(threadParentChat){
+					const threadParentChatId = threadParentChat.getAttribute('data-id');
+					console.log({threadParentChatId});
+					// hide reply link
+					const replyLink = threadParentChat.querySelector('.chat_reply_link');
+					if(replyLink){
+						replyLink.innerHTML = "&nbsp;";
+					}
+					// show the form
+					const replyForm = threadParentChat.querySelector('.reply_form[data-chat-id="' + threadParentChatId + '"]');
+					if(replyForm){ // Remove the reply form from the first .thread and add it to the end of the threadContainer
+					console.log({replyForm});
+						const textInput = replyForm.querySelector('input[name="content"]');
+						if (textInput) textInput.placeholder = 'Reply to thread...';
+						const replyBtn = replyForm.querySelector('input[name="reply"]');
+						if (replyBtn) replyBtn.value = 'Send';
+						replyForm.remove();
+						replyForm.style.display = 'block';
+						frozenThreadContainer.appendChild(replyForm);
 
-					// focus on the textInput
-					textInput.focus();
+						// focus on the textInput
+						textInput.focus();
+					}
+					// Remove the threadParentChat and put it into the frozenThreadContainer
+					threadParentChat.remove();
+					frozenThreadContainer.appendChild(threadParentChat);
 				}
-				const firstChat = threadContainer.getElementsByClassName('chat');
-				if(firstChat){
-					firstThreadDiv.remove();
-					threadContainer.appendChild(firstThreadDiv);
-				}
+				const backLink = document.createElement('a');
+				backLink.textContent = '‹ Go back to threads';
+				backLink.href = '#';
+				backLink.classList.add('back_to_threads_link');
+				backLink.addEventListener('click', (event) => {
+					this.getThreads();
+				});
+				frozenThreadContainer.appendChild(backLink);
+				const threadLabel = document.createElement('strong');
+				threadLabel.innerHTML = `Thread <span id="cur_thread_id_container">${threadId}</span>`;
+				threadLabel.classList.add('pull-right');
+				frozenThreadContainer.appendChild(threadLabel);
+				setTimeout(this.updateTCHeight,50);
+			}else{
+				threadContainer.querySelector('.thread').remove();
 			}
-
-			threadContainer.appendChild(document.createElement('br'));
-			threadContainer.appendChild(document.createElement('br'));
-			threadContainer.appendChild(backLink);
-			threadContainer.appendChild(threadLabel);
 
 			// scroll to btm of thread_container
 			document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
@@ -681,14 +765,24 @@ class AppState {
 		});
 	}
 
+	getCurrentThreadID(){
+		const currentThreadIdContainer = document.getElementById('cur_thread_id_container');
+		if(currentThreadIdContainer){
+			const tid = currentThreadIdContainer.textContent;
+			return !isNaN(tid*1)? tid*1: 0;
+		}
+		return 0;
+	}
+
 	getThreads(url_arg, metadata){
+		document.getElementById('frozen_thread_container').innerHTML = '';
 		this.updateCurrentMetadata(metadata);
 		if(this.skipLoadThreads){
 			this.skipLoadThreads = false;
 			return;
 		}
-		const create_thread_container = document.getElementById('create_thread_container');
-		if(create_thread_container) create_thread_container.style.display = 'inline-block';
+		document.getElementById('create_thread_container').style.display = 'inline-block';
+		document.getElementById('back_to_threads_bracket').style.display = 'none';
 		if(url_arg) this.updateCurrentUserURL(url_arg);
 		const url = this.getCurrentURL();
 		if(!url){
@@ -707,20 +801,34 @@ class AppState {
 				}
 			})
 			.then(json => {
-				this.updateTCHeight(); // housekeeping
 				const data = JSON.parse(json);
-				console.log(data);
 				if (data.error) {
 					this.feed(`Error: ${data.error}`, true);
 					return;
 				}
 				this.feed(data.msg);
 				const threads = data.threads;
-
-				// Order threads by thread_id ASC
-				threads.sort((a, b) => a.thread_id - b.thread_id);
-
 				const threadContainer = document.getElementById('thread_container');
+
+				if(!threads || !Array.isArray(threads) || threads.length < 1){
+					const message = document.createElement('div');
+					message.textContent = 'Be the first to create a thread on this page!';
+					const createThreadLink = document.createElement('a');
+					createThreadLink.href = '#';
+					createThreadLink.textContent = 'Create Thread';
+					createThreadLink.addEventListener('click', (e) => {
+						e.preventDefault();
+						document.getElementById('create_thread_toggle_link').click();
+					});
+					threadContainer.innerHTML = '';
+					threadContainer.appendChild(document.createElement('br'));
+					threadContainer.appendChild(document.createElement('br'));
+					threadContainer.appendChild(message);
+					threadContainer.appendChild(document.createElement('br'));
+					threadContainer.appendChild(createThreadLink);
+					return;
+				}
+
 				threadContainer.innerHTML = '';
 				threadContainer.classList.remove('thread');
 				threads.forEach(thread => {
@@ -774,7 +882,7 @@ class AppState {
 					threadDiv.appendChild(loadThreadLink);
 
 					// Likes and dislikes
-					var reactionContainer = app.reactDiv(thread.chat_id,data.reactions)
+					var reactionContainer = this.reactDiv(thread.chat_id,data.reactions)
 					threadDiv.appendChild(reactionContainer);
 
 					// Comment Count
@@ -787,22 +895,25 @@ class AppState {
 
 					threadContainer.appendChild(threadDiv);
 				});
-				app.updateReactions(data.reactions);
+				this.updateReactions(data.reactions);
 				// scroll to btm of thread_container
 				document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
 			})
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
-				console.error(error);
+				console.trace(error);
 			});
 	}
 
 	updateTCHeight(){
 		// adjust the height of #thread_container to fit the window (make sure the page has no y scrollbar)
-		const tc 	= document.getElementById('thread_container')
+		const tc 	= document.getElementById('thread_container');
+		tc.style.height = 10 + "px";
+		const ftc  	= document.getElementById('frozen_thread_container');
 		const top_y = tc.getBoundingClientRect().top*1;
 		const win_h = window.innerHeight*1;
-		tc.style.height = (win_h - top_y - 50) + "px";
+		const ftc_b = ftc.getBoundingClientRect().bottom*1;
+		tc.style.height = (win_h - ftc_b - top_y) + "px";
 	}
 
 	// Update settings
@@ -977,6 +1088,12 @@ class AppState {
 			invoiceDiv.setAttribute("data-balance",invoice.balance);
 			invoiceDiv.classList.add('invoice');
 
+			// Create checkboxes for each invoice
+			const checkbox = document.createElement('input');
+			checkbox.type = 'checkbox';
+			checkbox.classList.add('invoice_checkbox');
+
+
 			// Create and append invoice details
 			const nameElement = document.createElement('strong');
 			nameElement.textContent = name;
@@ -1114,6 +1231,7 @@ class AppState {
 			payoutLink.textContent = `₿`;
 			payoutLink.title = "Request a payout for this invoice";
 			payoutLink.href = '#';
+			payoutLink.style.fontSize = '15px';
 			payoutLink.style.paddingLeft = '10px';
 			payoutLink.classList.add('invoice_payout_link');
 			payoutLink.setAttribute("data-captcha-id",name);
@@ -1211,6 +1329,12 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 /* Named functions */
+
+function decodeHTMLEntities(text) {
+    let element = document.createElement('div');
+    element.innerHTML = text;
+    return element.textContent;
+}
 
 function show_tab(tabId) {
 	const tabs = document.querySelectorAll('.tab');
@@ -1396,6 +1520,7 @@ document.addEventListener('DOMContentLoaded', () => {
 		const rollup_form = document.getElementById('rollup_invoice_form');
 		if(rollup_form.style.display === 'none'){
 			rollup_form.style.display = 'block';
+			const invoice_checkboxes = document.getElementsByClassName('invoice_selector');
 		}else{
 			rollup_form.style.display = 'none';
 		}
@@ -1410,4 +1535,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	const rollupToggle = document.getElementById('rollup_invoice_toggle');
 	rollupIcon.style.paddingLeft = '5px';
 	rollupToggle.appendChild(rollupIcon);
+	document.getElementById('back_to_threads_bracket').addEventListener('click', () => {
+		app.getThreads();
+	});
 });
