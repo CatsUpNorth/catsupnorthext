@@ -69,6 +69,9 @@ class AppState {
 				console.error('Error saving state:', chrome.runtime.lastError);
 			}
 		});
+
+		document.getElementById('server_link').href 		= this.getSettings().server_url;
+		document.getElementById('server_link').textContent 	= this.getSettings().server_url.replace(/https?:\/\//, '');
 	}
 
 	cachePass(thread_id, pass) { // TODO: Create a modal with input masking
@@ -245,18 +248,15 @@ class AppState {
 		formData.append('thread_id', thread_id);
 		formData.append('css', css);
 		if(!reply_to){
-			formData.append('metadata_title', 		this.state.current_metadata?.title 			|| '');
-			formData.append('metadata_description', this.state.current_metadata?.description 	|| '');
-			formData.append('metadata_author', 		this.state.current_metadata?.author 		|| '');
-			formData.append('metadata_favicon', 	this.state.current_metadata?.favicon 		|| '');
-			formData.append('metadata_date', 		this.state.current_metadata?.datePublished 	|| '');
-			formData.append('metadata_image', 		this.state.current_metadata?.image 			|| '');
-			formData.append('metadata_language', 	this.state.current_metadata?.language 		|| '');
+			for(var prop in this.state.current_metadata){ // New thread, send URL metadata for card creation
+				if(!prop || prop.length < 1) continue;
+				formData.append(`metadata_${prop}`, this.state.current_metadata[prop] || '');
+			}
 			if(password){ // Don't send cached password if it's a new thread
 				formData.append('password', password);
 			}
 		}else{
-			if(!password) password = this.getCachedPass(thread_id);
+			if(!password && thread_id) password = this.getCachedPass(thread_id);
 			formData.append('password', password);
 		}
 		fetch(chatEndpoint, {

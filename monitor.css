@@ -252,3 +252,9 @@ a:hover {
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(222, 175, 35);
 }
+#server_link {
+  color: rgb(188, 172, 129);
+  text-decoration: none;
+  cursor: pointer;
+  font-style: italic;
+}
