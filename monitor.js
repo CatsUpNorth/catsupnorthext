@@ -4,19 +4,23 @@ class AppState {
 		this.allow_refresh 		= true; // Allow the refresh of the threads and chats as long as the user is not filling out a form.
 		this.thread_interval 	= null;
 		this.chat_interval 		= null;
+		this.rate_interval 		= null;
+		this.currentAJAXCall 	= false;
 		this.state				= {};
 		this.settingsSchema 	= {};
 		this.passCache			= {}; // Password attempts by thread id
 		this.settingsDefault 	= {
 		    server_url:             "https://catsupnorth.com", // fallback server url
 			thread_refresh_rate: 	60_000,
-			chat_refresh_rate: 		1000,
+			chat_refresh_rate: 		500,
 			autoload_threads: 		false,
 			url_preview_max_len: 	50,
-			min_spend_threshold: 	1
+			min_spend_threshold: 	1,
+			fiat_code: 				'USD',
 		};
 		this.skipFeed 			= false; // skip feed message if true only once (set back to false just before feed method exits early)
 		this.skipLoadThreads 	= false; // skip loading threads if true only once (set back to false just before loadThreads method exits early)
+		this.conversionRates 	= [];
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
 		this.settingsSchema.server_url = 'string';
 		this.loadState();
@@ -39,10 +43,10 @@ class AppState {
 
 			this.rebuildSettingsForm();
 			this.rebuildInvoiceList();
+			this.updateConversionRates();
 			this.startPolling();
 
 			// Create the thread and chat refresh intervals
-
 			try{
 				chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => { 
 					if (tabs.length > 0){
@@ -60,22 +64,34 @@ class AppState {
 		if(this.thread_interval) 	clearInterval(this.thread_interval);
 		if(this.chat_interval) 		clearInterval(this.chat_interval);
 		this.thread_interval = setInterval(() => {
+			// If there is a current AJAX call running, don't refresh
+			if(this.currentAJAXCall) return;
+			// If the server url is not set, don't refresh
 			if(!this.state.current_user_url) return;
+			// if user is in chat mode, don't get threads
 			if(document.getElementById('thread_container').classList.contains('thread')) return;
-			if(this.allow_refresh){
-				console.log('Refreshing threads...');
-				this.getThreads(this.state.current_user_url);
-			}
+			// If the allow refresh flag is set to false, don't refresh
+			if(!this.allow_refresh) return;
+			// refresh the chats
+			this.getThreads(this.state.current_user_url);
 		}, this.getSettings().thread_refresh_rate);
 		this.chat_interval = setInterval(() => {
+			// If there is a current AJAX call running, don't refresh
+			if(this.currentAJAXCall) return;
+			// If the server url is not set, don't refresh
 			if(!this.state.current_user_url) return;
+			// if user is in thread mode, don't get chats
 			if(!document.getElementById('thread_container').classList.contains('thread')) return;
-			if(document.getElementsByClassName('chat_reply_form_open').length > 0) return; // user is trying to reply to a chat
-			if(this.allow_refresh){
-				console.log('Refreshing chats...');
-				this.loadThread(this.getCurrentThreadID());
-			}
+			// user is trying to reply to a chat, don't refresh
+			if(document.getElementsByClassName('chat_reply_form_open').length > 0) return; 
+			// If the allow refresh flag is set to false, don't refresh
+			if(!this.allow_refresh) return;
+			// refresh the chats
+			this.loadThread(this.getCurrentThreadID());
 		}, this.getSettings().chat_refresh_rate);
+		this.rate_interval = setInterval(() => {
+			this.updateConversionRates();
+		}, 6133); // 6.333 seconds (try to miss the other intervals)
 	}
 
 	// Save the current state to chrome.storage.local
@@ -140,6 +156,7 @@ class AppState {
 	buyKeys(val, curr) {
 		const settings 	= this.getSettings();
 		const buyEndpoint 	= `${settings.server_url}/buy?val=${encodeURIComponent(val)}&cur=${encodeURIComponent(curr)}`;
+		this.currentAJAXCall = true;
 		fetch(buyEndpoint)
 			.then(response => {
 				if (response.ok) {
@@ -148,8 +165,13 @@ class AppState {
 					throw new Error('Network response was not ok');
 				}
 			})
-			.then(jsonData => { //  Expected: { "captcha_id": None, "secret": None, "error": None }
-				const data = JSON.parse(jsonData);
+			.then(json => { //  Expected: { "captcha_id": None, "secret": None, "error": None }
+				this.currentAJAXCall = false;
+				const data = typeof json == 'string'? JSON.parse(json): json;
+				if(!data || typeof data != 'object'){
+					this.feed('Server response parse failed.', true);
+					return;
+				}
 				const captchaId 		= data.captcha_id 		|| null;
 				const secret			= data.secret			|| null;
 				const error 			= data.error			|| null;
@@ -201,6 +223,9 @@ class AppState {
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
 				console.error(error);
+			})
+			.finally(() => {
+				this.currentAJAXCall = false;
 			});
 	}
 
@@ -208,17 +233,26 @@ class AppState {
 		const settings 			= this.getSettings();
 		const recoverEndpoint 	= `${settings.server_url}/recover_invoice`;
 		const formObj			= new FormData(form);
+		this.currentAJAXCall 	= true;
 		fetch(recoverEndpoint, {
 			method: 'POST',
 			body: formObj
-		}).then(response => {
+		})
+		.then(response => {
+			this.currentAJAXCall = false;
 			if (response.ok) {
 				return response.text();
 			} else {
 				throw new Error('Network response was not ok');
 			}
-		}).then(json => {
-			const data = JSON.parse(json);
+		})
+		.then(json => {
+			this.currentAJAXCall = false;
+			const data = typeof json == 'string'? JSON.parse(json): json;
+			if(!data || typeof data != 'object'){
+				this.feed('Server response parse failed.', true);
+				return;
+			}
 			if (data.error) {
 				this.feed(`Error: ${data.error}`, true);
 			} else {
@@ -236,9 +270,13 @@ class AppState {
 				feedbackAlt.textContent = data.msg;
 				invoiceContainer.appendChild(feedbackAlt);
 			}
-		}).catch(error => {
+		})
+		.catch(error => {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
 			console.error(error);
+		})
+		.finally(() => {
+			this.currentAJAXCall = false;
 		});
 	}
 
@@ -273,10 +311,10 @@ class AppState {
 		formData.append('captcha_id', captcha_id);
 		formData.append('secret', this.state.invoices[captcha_id].secret);
 		formData.append('content', content.toString());
-		formData.append('spend', spend)
 		formData.append('url', currentURL);
 		formData.append('reply_to', reply_to);
 		formData.append('thread_id', thread_id);
+		formData.append('spend', spend);
 		formData.append('css', css);
 		if(!reply_to){
 			for(var prop in this.state.current_metadata){ // New thread, send URL metadata for card creation
@@ -290,18 +328,27 @@ class AppState {
 			if(!password && thread_id) password = this.getCachedPass(thread_id);
 			formData.append('password', password);
 		}
+		this.currentAJAXCall = true;
 		fetch(chatEndpoint, {
 			method: 'POST',
 			body: formData
-		}).then(response => {
+		})
+		.then(response => {
+			this.currentAJAXCall = false;
 			if (response.ok) {
 				return response.text();
 			} else {
 				throw new Error('Network response was not ok');
 			}
-		}).then(json => {
+		})
+		.then(json => {
+			this.currentAJAXCall = false;
 			this.updateTCHeight(); // housekeeping
-			const data = JSON.parse(json);
+			const data = typeof json == 'string'? JSON.parse(json): json;
+			if(!data || typeof data != 'object'){
+				this.feed('Server response parse failed.', true);
+				return;
+			}
 			if (data.error) {
 				this.feed(`Error: ${data.error}`, true);
 			} else {
@@ -321,9 +368,13 @@ class AppState {
 				this.feed("ERROR: Thread ID not found.", true);
 			}
 			// TODO: Auto-redeem invoices when chats come back 
-		}).catch(error => {
+		})
+		.catch(error => {
 			this.feed('There has been a problem with your post operation. See console.', true);
 			console.error(error);
+		})
+		.finally(() => {
+			this.currentAJAXCall = false;
 		});
 	}
 	
@@ -462,32 +513,44 @@ class AppState {
 					formData.append('captcha_id', name);
 					formData.append('secret', inv.secret);
 				}
+				this.currentAJAXCall = true;
 				fetch(reactEndpoint, {
 					method: 'POST',
 					body: formData
-				}).then(response => {
+				})
+				.then(response => {
+					this.currentAJAXCall = false;
 					if (response.ok) {
 						return response.text();
 					} else {
 						throw new Error('Network response was not ok');
 					}
-				}).then(json => {
-					const data = JSON.parse(json);
+				})
+				.then(json => {
+					this.currentAJAXCall = false;
+					const data = typeof json == 'string'? JSON.parse(json): json;
+					if(!data || typeof data != 'object'){
+						this.feed('Server response parse failed.', true);
+						return;
+					}
 					if (data.error) {
 						this.feed(`Error: ${data.error}`, true);
 					} else {
 						this.feed(data.msg);
 					}
-				}).catch(error => {
+				})
+				.catch(error => {
 					this.feed('There has been a problem with your fetch operation. See console.', true);
 					console.error(error);
+				})
+				.finally(() => {
+					this.currentAJAXCall = false;
 				});
 			});
 		});
 	}
 
 	loadThread(threadId, password = null){
-		console.log({threadId});
 		const startMode = threadId == this.getCurrentThreadID()? false: true;
 		threadId = threadId || this.getCurrentThreadID();
 		document.getElementById('create_thread_container').style.display = 'none';
@@ -496,46 +559,53 @@ class AppState {
 		const settings = this.getSettings();
 		const threadContainer = document.getElementById('thread_container');
 		const frozenThreadContainer = document.getElementById('frozen_thread_container');
-		//fetch(`${settings.server_url}/get_thread_chats?thread_id=${threadId}`)
 		// change to post
 		const formData = new FormData();
 		formData.append('thread_id', threadId);
 		if (password) formData.append('password', password);
 		const threadEndpoint = `${settings.server_url}/get_thread_chats`;
 
-		const latestDateSubmitted = null;
+		var latestDateSubmitted = null;
 		if(startMode){
 			threadContainer.innerHTML = '';
 		}else{
-			const chatDivs = document.querySelector('.thread_container .chat');
+			const chatDivs = document.querySelectorAll('#thread_container .chat');
 			if(chatDivs){
-				chatDivs.each((chat) => { latestDateSubmitted = chat.getAttribute('data-date-submitted'); });
+				// Get the last node from query selector
+				const lastChatDiv = chatDivs[chatDivs.length - 1];
+				if (lastChatDiv && lastChatDiv.getAttribute('data-date-submitted')) latestDateSubmitted = lastChatDiv.getAttribute('data-date-submitted');
 			}
 		}
 		if(latestDateSubmitted){
-			console.log({latestDateSubmitted});
 			formData.append('date_submitted_after', latestDateSubmitted);
 		}
-
+		this.currentAJAXCall = true;
 		fetch(threadEndpoint, {
 			method: 'POST',
 			body: formData
-		}).then(response => {
+		})
+		.then(response => {
+			this.currentAJAXCall = false;
 			if (response.ok) {
 				return response.text();
 			} else {
 				throw new Error('Network response was not ok');
 			}
-		}).then(json => {
+		})
+		.then(json => {
+			this.currentAJAXCall = false;
 			this.updateTCHeight(); // housekeeping
 			const data = typeof json == 'string'? JSON.parse(json): json;
+			if(!data || typeof data != 'object'){
+				this.feed('Server response parse failed.', true);
+				return;
+			}
 			if (data.error) {
 				this.feed(`Error: ${data.error}`, true);
 				return;
 			}
 			this.feed(data.msg);
 			const threadChats = data.chats;
-			console.log({threadChats});
 			threadContainer.classList.add('thread');
 			threadChats.forEach(chat => {
 
@@ -556,8 +626,14 @@ class AppState {
 				chatDiv.setAttribute('data-id', `${chat.chat_id}`);
 				chatDiv.setAttribute('data-reply-to-id', `${chat.reply_to_id}`);
 				chatDiv.setAttribute('data-date-submitted', `${chat.date_submitted}`);
+				var superChatSpan = '';
 				if(chat.superchat && !isNaN(chat.superchat*1) && chat.superchat > 0){
 					chatDiv.classList.add('superchat');
+					superChatSpan 	= '<span class="superchat_amount">';
+					const fiatStr 	= this.satoshiToFiatStr(chat.superchat);
+					const cryptoStr = this.satoshiToCryptoStr(chat.superchat);
+					superChatSpan += `${fiatStr}&nbsp;&nbsp;|&nbsp;&nbsp;${cryptoStr}`;
+					superChatSpan += '</span><hr>';
 				}
 				if(chat.invoice_id && this.state.my_invoice_ids.indexOf(chat.invoice_id*1) > -1){
 					const hasThreadClass = chatDiv.classList.contains('thread');
@@ -567,7 +643,7 @@ class AppState {
 				//const reply_to_link	= chat.reply_to_id? `<a href="#chat_id_${chat.reply_to_id}">&nbsp;^${chat.reply_to_id}</a>`: '';
 				const alias_str 	= (chat.alias && typeof chat.alias == 'string')? `&nbsp;&nbsp;<strong style="color:#183f36;">${chat.alias}</strong>`: '';
 				//chatDiv.innerHTML 	= `<strong>${chat.chat_id}${reply_to_link}</strong>${alias_str}`;
-				chatDiv.innerHTML 	= `<span style="font-size:9px;opacity:0.6;"><strong>${chat.chat_id}</strong>${alias_str}</span>`;
+				chatDiv.innerHTML 	= `${superChatSpan}<span style="font-size:9px;opacity:0.6;"><strong>${chat.chat_id}</strong>${alias_str}</span>`;
 
 				const chatContent = document.createElement('strong');
 				// render utf chars as emojies
@@ -607,7 +683,7 @@ class AppState {
 					<input type="text" name="content" id="reply_text_input_${chat.chat_id}" placeholder="Reply...">
 					<div class="reply_form_super_chat_input_container hidden" id="spend_on_chat_${chat.chat_id}_container">
 						<input type="number" placeholder="Super Chat Spend in USD" id="dollars_on_chat_${chat.chat_id}">
-						<input type="hidden" name="spend" value="0" id="spend_on_chat_${chat.chat_id}" name="spend" class="superchat_satoshi mini">
+						<input type="hidden" name="spend" value="0" id="spend_on_chat_${chat.chat_id}" class="superchat_satoshi mini">
 						<span id="satoshi_str_on_chat_${chat.chat_id}"></span>
 					</div>
 					<br>&nbsp;<input type="submit" name="reply" value="" id="reply_text_submit_${chat.chat_id}" style="opacity:0;width:2px;height:2px;">`;
@@ -650,7 +726,25 @@ class AppState {
 					superChatContainer.getElementsByTagName('input').item(1).value = 0;
 					if(superChatContainer.classList.contains('hidden')){
 						superChatContainer.classList.remove('hidden');
-						superChatContainer.getElementsByTagName('input').item(0).focus();
+						const dollarsInput = document.getElementById(`dollars_on_chat_${chat_id}`);
+						const clonedDollarsInput = dollarsInput.cloneNode(true);
+						superChatContainer.replaceChild(clonedDollarsInput, dollarsInput);
+						clonedDollarsInput.focus();
+						clonedDollarsInput.addEventListener('input', (event) => {
+							const satoshiInput = document.getElementById(`spend_on_chat_${chat_id}`);
+							const satoshiStr = document.getElementById(`satoshi_str_on_chat_${chat_id}`);
+							const dollars = event.target.value;
+							if(dollars && !isNaN(dollars*1) && dollars*1 > 0){
+								const satoshi 	= this.fiatToSatoshi(dollars);
+								const cryptoStr = this.fiatToCryptoStr(satoshi);
+								satoshiInput.value = satoshi;
+								satoshiStr.textContent = `${satoshi} sats | ${cryptoStr}`;
+							}else{
+								satoshiInput.value = 0;
+								satoshiStr.textContent = '&nbsp;';
+							}
+						});
+
 					}else{ // Zero out the input and hide the container and focus on the text input
 						superChatContainer.classList.add('hidden');
 						document.getElementById(`reply_text_input_${chat_id}`).focus();
@@ -678,7 +772,10 @@ class AppState {
 					if (spendInput) spendInput.value = 0;
 					const dollarsInput = document.getElementById(`dollars_on_chat_${chat_id}`);
 					if (dollarsInput) dollarsInput.value = '';
-					
+					const formParentDiv = event.target.parentElement;
+					if(formParentDiv.classList.contains('chat')){
+						formParentDiv.querySelector('.chat_reply_link').click();
+					}
 					this.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, formObject.spend);
 				});
 				var heightFixer = reactionContainer.getElementsByClassName('reaction_height_fixer').item(0)
@@ -722,10 +819,8 @@ class AppState {
 
 			if(startMode){
 				const threadParentChat = threadContainer.querySelector('.thread_parent_chat');
-				console.log({threadParentChat});
 				if(threadParentChat){
 					const threadParentChatId = threadParentChat.getAttribute('data-id');
-					console.log({threadParentChatId});
 					// hide reply link
 					const replyLink = threadParentChat.querySelector('.chat_reply_link');
 					if(replyLink){
@@ -734,7 +829,6 @@ class AppState {
 					// show the form
 					const replyForm = threadParentChat.querySelector('.reply_form[data-chat-id="' + threadParentChatId + '"]');
 					if(replyForm){ // Remove the reply form from the first .thread and add it to the end of the threadContainer
-					console.log({replyForm});
 						const textInput = replyForm.querySelector('input[name="content"]');
 						if (textInput) textInput.placeholder = 'Reply to thread...';
 						const replyBtn = replyForm.querySelector('input[name="reply"]');
@@ -762,9 +856,10 @@ class AppState {
 				threadLabel.innerHTML = `Thread <span id="cur_thread_id_container">${threadId}</span>`;
 				threadLabel.classList.add('pull-right');
 				frozenThreadContainer.appendChild(threadLabel);
-				setTimeout(this.updateTCHeight,50);
+				setTimeout(this.updateTCHeight,5);
 			}else{
-				threadContainer.querySelector('.thread').remove();
+				const trd = threadContainer.querySelector('.thread');
+				if(trd) trd.remove();
 			}
 
 			// scroll to btm of thread_container
@@ -773,6 +868,9 @@ class AppState {
 		.catch(error => {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
 			console.error(error);
+		})
+		.finally(() => {
+			this.currentAJAXCall = false;
 		});
 	}
 
@@ -803,6 +901,7 @@ class AppState {
 		// send this to the get_threads endpoint
 		const settings = this.getSettings();
 		const getThreadsURL = `${settings.server_url}/get_threads?url=${encodeURIComponent(url)}`;
+		this.currentAJAXCall = true;
 		fetch(getThreadsURL)
 			.then(response => {
 				if (response.ok) {
@@ -812,7 +911,12 @@ class AppState {
 				}
 			})
 			.then(json => {
-				const data = JSON.parse(json);
+				this.currentAJAXCall = false;
+				const data = typeof json == 'string'? JSON.parse(json): json;
+				if(!data || typeof data != 'object'){
+					this.feed('Server response parse failed.', true);
+					return;
+				}
 				if (data.error) {
 					this.feed(`Error: ${data.error}`, true);
 					return;
@@ -909,10 +1013,14 @@ class AppState {
 				this.updateReactions(data.reactions);
 				// scroll to btm of thread_container
 				document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
+				setTimeout(this.updateTCHeight,5);
 			})
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
 				console.trace(error);
+			})
+			.finally(() => {
+				this.currentAJAXCall = false;
 			});
 	}
 
@@ -1002,9 +1110,165 @@ class AppState {
 		if(err) console.trace(arg,err);
 		const f 		= document.getElementById('feed');
 		if(!f) return;
-		f.innerHTML 	= arg.toString();
-		f.title		 	= arg.toString();
+		f.innerHTML 	= arg.toString() || "&nbsp;";
 		f.style.color 	= err? "rgb(255,0,0)": "rgb(1,64,54)";
+	}
+
+	updateConversionRates(){
+		
+		const settings = this.getSettings();
+		if(!settings.server_url || typeof settings.server_url != 'string' || !settings.server_url.startsWith('http')) return;
+		const conversionRateURL = `${settings.server_url}/static/btc_rate_current.json`
+
+		// Get the refresh rate
+		if(!conversionRateURL){
+			this.feed('No conversion rate URL set.', true);
+			return;
+		}
+		this.currentAJAXCall = true;
+		fetch(conversionRateURL)
+			.then(response => {
+				if (response.ok) {
+					return response.text();
+				} else {
+					throw new Error('Network response was not ok');
+				}
+			})
+			.then(json => {
+				this.currentAJAXCall = false;
+				const data = typeof json == 'string'? JSON.parse(json): json;
+				if(!data || !Array.isArray(data) || data.length < 1){
+					this.feed('Array min length of 1 expected for conversion rates.', true);
+					return;
+				}
+				this.conversionRates = data;
+			})
+			.catch(error => {
+				console.error(error);
+			})
+			.finally(() => {
+				this.currentAJAXCall = false;
+			});
+	}
+
+	satoshiToCrypto(satoshi){
+		if(isNaN(satoshi*1) || satoshi < 1 || satoshi % 1 > 0) return 0;
+		return satoshi / 100_000_000;
+	}
+
+	cryptoToSatoshi(crypto_amount){
+		if(isNaN(crypto_amount*1)) return 0;
+		return Math.floor(crypto_amount * 100_000_000);
+	}
+
+	fiatToSatoshi(fiat_amount){
+		if(isNaN(fiat_amount*1)) return 0;
+		const fiat_code = this.getSettings()?.fiat_code || null;
+		const rate = this.conversionRates.find(rate => rate.code === fiat_code);
+		if(!rate || !rate.rate || isNaN(rate.rate*1)) return 0;
+		return this.cryptoToSatoshi(fiat_amount / rate.rate);
+	}
+
+	satoshiToFiat(satoshi){
+		if(isNaN(satoshi*1) || satoshi % 1 > 0) return 0;
+		const fiat_code = this.getSettings()?.fiat_code || null;
+		const rate = this.conversionRates.find(rate => rate.code === fiat_code);
+		if(!rate || !rate.rate || isNaN(rate.rate*1)) return 0;
+		const fiat_amount = (satoshi / 100_000_000) * rate.rate;
+		return fiat_amount;
+	}
+
+	fiatToCryptoStr(fiat_amount){
+		return this.satoshiToCrypto(this.fiatToSatoshi(fiat_amount)) + " ₿";
+	}
+
+	fiatToSatoshiStr(fiat_amount){
+		return this.fiatToSatoshi(fiat_amount) + " sats";
+	}
+
+	satoshiToCryptoStr(satoshi){
+		return this.satoshiToCrypto(satoshi) + " ₿";
+	}
+
+	satoshiToFiatStr(satoshi){
+		const fiat_code = this.getSettings()?.fiat_code || null;
+		if (!fiat_code) return "---";
+		var curr_char 		= fiat_code + '',
+			curr_accuracy 	= 2;
+		switch(fiat_code){
+			case 'USD': curr_char = '$'; break;
+			case 'EUR': curr_char = '€'; break;
+			case 'GBP': curr_char = '£'; break;
+			case 'JPY': curr_char = '¥'; break;
+			case 'AUD': curr_char = 'A$'; break;
+			case 'CAD': curr_char = 'C$'; break;
+			case 'CHF': curr_char = 'Fr'; break;
+			case 'CNY': curr_char = 'CN¥'; break;
+			case 'SEK': curr_char = 'kr'; break;
+			case 'NZD': curr_char = 'NZ$'; break;
+			case 'KRW': curr_char = '₩'; break;
+			case 'SGD': curr_char = 'S$'; break;
+			case 'NOK': curr_char = 'kr'; break;
+			case 'MXN': curr_char = 'Mex$'; break;
+			case 'HKD': curr_char = 'HK$'; break;
+			case 'TRY': curr_char = '₺'; break;
+			case 'RUB': curr_char = '₽'; break;
+			case 'INR': curr_char = '₹'; break;
+			case 'BRL': curr_char = 'R$'; break;
+			case 'ZAR': curr_char = 'R'; break;
+			case 'IDR': curr_char = 'Rp'; break;
+			case 'MYR': curr_char = 'RM'; break;
+			case 'PHP': curr_char = '₱'; break;
+			case 'THB': curr_char = '฿'; break;
+			case 'VND': curr_char = '₫'; break;
+			case 'PLN': curr_char = 'zł'; break;
+			case 'TWD': curr_char = 'NT$'; break;
+			case 'SAR': curr_char = 'ر.س'; break;
+			case 'AED': curr_char = 'د.إ'; break;
+			case 'CZK': curr_char = 'Kč'; break;
+			case 'CLP': curr_char = 'CLP$'; break;
+			case 'ILS': curr_char = '₪'; break;
+			case 'KES': curr_char = 'KSh'; break;
+			case 'PKR': curr_char = '₨'; break;
+			case 'QAR': curr_char = 'QR'; break;
+			case 'HUF': curr_char = 'Ft'; break;
+			case 'EGP': curr_char = 'E£'; break;
+			case 'COP': curr_char = 'COL$'; break;
+			case 'ARS': curr_char = 'AR$'; break;
+			case 'DOP': curr_char = 'RD$'; break;
+			case 'CRC': curr_char = '₡'; break;
+			case 'PEN': curr_char = 'S/.'; break;
+			case 'UYU': curr_char = '$U'; break;
+			case 'BOB': curr_char = 'Bs'; break;
+			case 'PYG': curr_char = '₲'; break;
+			case 'DKK': curr_char = 'kr'; break;
+			case 'ISK': curr_char = 'ikr'; break;
+			case 'RON': curr_char = 'lei'; break;
+			case 'BGN': curr_char = 'лв'; break;
+			case 'MAD': curr_char = 'د.م.'; break;
+			case 'ZMW': curr_char = 'ZK'; break;
+			case 'BHD': curr_char = '.د.ب'; break;
+			case 'OMR': curr_char = 'ر.ع.'; break;
+			case 'JOD': curr_char = 'د.ا'; break;
+			case 'TND': curr_char = 'د.ت'; break;
+			case 'LBP': curr_char = 'ل.ل'; break;
+			case 'GHS': curr_char = '₵'; break;
+			case 'NGN': curr_char = '₦'; break;
+			case 'ETB': curr_char = 'Br'; break;
+			case 'TZS': curr_char = 'TSh'; break;
+			case 'MUR': curr_char = '₨'; break;
+			case 'UGX': curr_char = 'USh'; break;
+			case 'DZD': curr_char = 'د.ج'; break;
+			case 'VUV': curr_char = 'VT'; break;
+			case 'FJD': curr_char = 'FJ$'; break;
+			case 'PGK': curr_char = 'K'; break;
+			case 'XOF': curr_char = 'CFA'; break;
+			case 'XAF': curr_char = 'CFA'; break;
+			case 'KZT': curr_char = '₸'; break;
+			case 'GEL': curr_char = '₾'; break;
+			default:;
+		}
+		return curr_char + this.satoshiToFiat(satoshi).toFixed(curr_accuracy);
 	}
 	
 	rebuildSettingsForm() {
@@ -1012,7 +1276,11 @@ class AppState {
 		if(!form) return;
         form.innerHTML = ''; // Clear the form
 
-        for (let key in this.state.settings) {
+		// Get alpha sorted keys from this.state.settings
+		const sortedKeys = Object.keys(this.state.settings).sort();
+
+        for (var i=0; i<sortedKeys.length; i++) {
+			const key  	= sortedKeys[i];
             const label = document.createElement('label');
             label.textContent = key.replace(/_/g, ' ').toUpperCase();
             form.appendChild(label);
@@ -1056,6 +1324,23 @@ class AppState {
 					});
 					form.appendChild(urlset);
 					form.appendChild(document.createElement('br'));
+				});
+				form.appendChild(document.createElement('br'));
+				form.appendChild(document.createElement('br'));
+			}else if(key == 'fiat_code'){
+				// Get all fiat_codes from conversion rates
+				const fiat_codes = this.conversionRates.map(rate => rate.code).sort();
+				// Add a button to set the input value to each of the available fiat_codes
+				fiat_codes.forEach(fiat_code => {
+					const fiatCodeSet = document.createElement('a');
+					fiatCodeSet.textContent = fiat_code;
+					fiatCodeSet.style.paddingRight = '5px';
+					fiatCodeSet.style.paddingLeft = '5px';
+					fiatCodeSet.style.cursor = 'pointer';
+					fiatCodeSet.addEventListener('click', () => {
+						input.value = fiat_code;
+					});
+					form.appendChild(fiatCodeSet);
 				});
 				form.appendChild(document.createElement('br'));
 				form.appendChild(document.createElement('br'));
@@ -1132,15 +1417,10 @@ class AppState {
 			invoiceDiv.appendChild(rateQuoteElement);
 
 			const balanceElement = document.createElement('p');
-			balanceElement.textContent = `Balance: ${invoice.balance} Satoshis`;
-			if("conv_balance" in invoice && invoice.conv_balance && "currency_pair" in invoice && invoice.currency_pair){
-				if(!isNaN(invoice.conv_balance*1)){
-					const twoDecimalConvBalance = (invoice.conv_balance*1).toFixed(2);
-					const convCurrency = invoice.currency_pair.split('_')[1];
-					balanceElement.textContent += ` (~${twoDecimalConvBalance} ${convCurrency})`;
-				}
-			}
+			const fiatStr = this.satoshiToFiatStr(invoice.balance);
+			balanceElement.textContent = `Balance: ${invoice.balance} sats (${fiatStr})`;
 			invoiceDiv.appendChild(balanceElement);
+
 
 			const createdElement = document.createElement('p');
 			createdElement.textContent = `Created: ${invoice.created}`;
@@ -1200,17 +1480,26 @@ class AppState {
 				formData.append('secret', this.state.invoices[captchaId].secret);
 
 				// Send the POST request to redeem the invoice
+				this.currentAJAXCall = true;
 				fetch(redeemEndpoint, {
 					method: 'POST',
 					body: formData
-				}).then(response => {
+				})
+				.then(response => {
+					this.currentAJAXCall = false;
 					if (response.ok) {
 						return response.text();
 					} else {
 						throw new Error('Network response was not ok');
 					}
-				}).then(json => {
-					const data = JSON.parse(json);
+				})
+				.then(json => {
+					this.currentAJAXCall = false;
+					const data = typeof json == 'string'? JSON.parse(json): json;
+					if(!data || typeof data != 'object'){
+						this.feed('Server response parse failed.', true);
+						return;
+					}
 					if(data.error){
 						this.feed(`Error: ${data.error.toString()}`, true);
 					}if(data.msg){
@@ -1230,9 +1519,13 @@ class AppState {
 						this.saveState();
 						this.rebuildInvoiceList();
 					}
-				}).catch(error => {
+				})
+				.catch(error => {
 					this.feed('There has been a problem with your fetch operation. See console.', true);
 					console.error(error);
+				})
+				.finally(() => {
+					this.currentAJAXCall = false;
 				});
 			});
 			invoiceDiv.appendChild(redeemLink);
@@ -1266,17 +1559,26 @@ class AppState {
 				formData.append('secret', secret);
 				formData.append('send_to_address', sentToAddress.trim());
 				// Send the POST request to redeem the invoice
+				this.currentAJAXCall = true;
 				fetch(payoutEndpoint, {
 					method: 'POST',
 					body: formData
-				}).then(response => {
+				})
+				.then(response => {
+					this.currentAJAXCall = false;
 					if (response.ok) {
 						return response.text();
 					} else {
 						throw new Error('Network response was not ok');
 					}
-				}).then(json => {
-					const data = JSON.parse(json);
+				})
+				.then(json => {
+					this.currentAJAXCall = false;
+					const data = typeof json == 'string'? JSON.parse(json): json;
+					if(!data || typeof data != 'object'){
+						this.feed('Server response parse failed.', true);
+						return;
+					}
 					if(data.error){
 						this.feed(`Error: ${data.error.toString()}`, true);
 						return;
@@ -1296,9 +1598,13 @@ class AppState {
 					this.state.invoices[captchaId].payout_requests = data.payout_requests || [];
 					this.state.invoices[captchaId].payout_requests.push(req);
 					this.rebuildInvoiceList();
-				}).catch(error => {
+				})
+				.catch(error => {
 					this.feed('There has been a problem with your fetch operation. See console.', true);
 					console.error(error);
+				})
+				.finally(() => {
+					this.currentAJAXCall = false;
 				});
 			});
 			invoiceDiv.appendChild(payoutLink);
@@ -1335,7 +1641,6 @@ const app = new AppState();
 
 /* Extension functionality */
 chrome.runtime.onMessage.addListener((message) => {
-	console.log('Received message:', message);
 	if (message.url) app.getThreads(message.url, message.metadata);
 });
 
@@ -1380,7 +1685,6 @@ function show_tab(tabId) {
 			break;
 		default:;
 	}
-
 	app.rebuildInvoiceList();
 }
 
@@ -1397,63 +1701,8 @@ function load_invoice_selectors(){
 			var invoice = invoices[captchaId];
 			var balance = (invoice.balance && !isNaN(invoice.balance))? invoice.balance: 0;
 			if(balance <= 0) continue;
-			if(invoice.server_url !== app.getSettings().server_url) continue;
-			var cur_bal = '0.00';
-			if(balance && 'exchange_rate' in invoice && invoice.exchange_rate && !isNaN(invoice.exchange_rate) && 'currency_pair' in invoice && invoice.currency_pair && typeof invoice.currency_pair == 'string'){
-				cur_bal = (balance * invoice.exchange_rate / 100000000).toFixed(2);
-			}
-			try{
-				switch(invoice.currency_pair.split('_')[1]){
-					case 'USD': cur_bal = '$' + cur_bal; break;
-					case 'EUR': cur_bal = '€' + cur_bal; break;
-					case 'GBP': cur_bal = '£' + cur_bal; break;
-					case 'JPY': cur_bal = '¥' + cur_bal; break;
-					case 'AUD': cur_bal = 'A$' + cur_bal; break;
-					case 'CAD': cur_bal = 'C$' + cur_bal; break;
-					case 'CHF': cur_bal = 'Fr' + cur_bal; break;
-					case 'CNY': cur_bal = '¥' + cur_bal; break;
-					case 'SEK': cur_bal = 'kr' + cur_bal; break;
-					case 'NZD': cur_bal = 'NZ$' + cur_bal; break;
-					case 'KRW': cur_bal = '₩' + cur_bal; break;
-					case 'SGD': cur_bal = 'S$' + cur_bal; break;
-					case 'NOK': cur_bal = 'kr' + cur_bal; break;
-					case 'MXN': cur_bal = 'Mex$' + cur_bal; break;
-					case 'HKD': cur_bal = 'HK$' + cur_bal; break;
-					case 'TRY': cur_bal = '₺' + cur_bal; break;
-					case 'RUB': cur_bal = '₽' + cur_bal; break;
-					case 'INR': cur_bal = '₹' + cur_bal; break;
-					case 'BRL': cur_bal = 'R$' + cur_bal; break;
-					case 'ZAR': cur_bal = 'R' + cur_bal; break;
-					case 'IDR': cur_bal = 'Rp' + cur_bal; break;
-					case 'MYR': cur_bal = 'RM' + cur_bal; break;
-					case 'PHP': cur_bal = '₱' + cur_bal; break;
-					case 'THB': cur_bal = '฿' + cur_bal; break;
-					case 'VND': cur_bal = '₫' + cur_bal; break;
-					case 'PLN': cur_bal = 'zł' + cur_bal; break;
-					case 'TWD': cur_bal = 'NT$' + cur_bal; break;
-					case 'SAR': cur_bal = 'SR' + cur_bal; break;
-					case 'AED': cur_bal = 'د.إ' + cur_bal; break;
-					case 'CZK': cur_bal = 'Kč' + cur_bal; break;
-					case 'CLP': cur_bal = 'CLP$' + cur_bal; break;
-					case 'ILS': cur_bal = '₪' + cur_bal; break;
-					case 'KES': cur_bal = 'KSh' + cur_bal; break;
-					case 'PKR': cur_bal = '₨' + cur_bal; break;
-					case 'QAR': cur_bal = 'QR' + cur_bal; break;
-					case 'HUF': cur_bal = 'Ft' + cur_bal; break;
-					case 'EGP': cur_bal = 'E£' + cur_bal; break;
-					case 'COP': cur_bal = 'COL$' + cur_bal; break;
-					case 'ARS': cur_bal = 'AR$' + cur_bal; break;
-					case 'DOP': cur_bal = 'RD$' + cur_bal; break;
-					case 'CRC': cur_bal = '₡' + cur_bal; break;
-					case 'PEN': cur_bal = 'S/.' + cur_bal; break;
-					case 'UYU': cur_bal = '$U' + cur_bal; break;
-					case 'BOB': cur_bal = 'Bs' + cur_bal; break;
-					case 'PYG': cur_bal = '₲' + cur_bal; break;
-					default:;
-				}
-			}catch(e){
-				console.error(e);
-			}
+			if(invoice.server_url !== app.getSettings().server_url) continue; // skip invoices for other servers
+			var cur_bal = app.satoshiToFiatStr(balance);
 			const option = document.createElement('option');
 			option.value = captchaId;
 			option.textContent = `${String(balance).padStart(8,"0")}  |  ${cur_bal}  |  ${captchaId}`;
