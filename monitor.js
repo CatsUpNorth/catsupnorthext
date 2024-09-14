@@ -662,6 +662,16 @@ class AppState {
 				replyForm.appendChild(replyLinkSpan);
 
 				replyForm.addEventListener('submit', (event) => {
+
+					// Clear the inputs
+					const chat_id = event.target.getAttribute('data-chat-id');
+					const textInput = event.target.querySelector('input[name="content"]');
+					if (textInput) textInput.value = '';
+					const spendInput = event.target.querySelector('input[name="spend"]');
+					if (spendInput) spendInput.value = 0;
+					const dollarsInput = document.getElementById(`dollars_on_chat_${chat_id}`);
+					if (dollarsInput) dollarsInput.value = '';
+
 					event.preventDefault();
 					const formData = new FormData(event.target);
 					const formObject = {is_private: (event.submitter.name === 'private_reply' ? 1 : 0)};
