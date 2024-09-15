@@ -1,6 +1,7 @@
 /* App State */
 class AppState {
 	constructor() {
+		this.version			= '0.0.1';
 		this.allow_refresh 		= true; // Allow the refresh of the threads and chats as long as the user is not filling out a form.
 		this.thread_interval 	= null;
 		this.chat_interval 		= null;
@@ -20,6 +21,9 @@ class AppState {
 		};
 		this.skipFeed 			= false; // skip feed message if true only once (set back to false just before feed method exits early)
 		this.skipLoadThreads 	= false; // skip loading threads if true only once (set back to false just before loadThreads method exits early)
+		this.skipAutoScroll 	= false; // skip autoscroll if user is scrolling up in the chat.
+		this.transactionCaptcha	= null; // set to captchaId when user initiates a super chat or a verfied username purchase.
+		this.newMessages 		= 0;
 		this.conversionRates 	= [];
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
 		this.settingsSchema.server_url = 'string';
@@ -63,6 +67,7 @@ class AppState {
 	startPolling(){
 		if(this.thread_interval) 	clearInterval(this.thread_interval);
 		if(this.chat_interval) 		clearInterval(this.chat_interval);
+		if(this.rate_interval) 		clearInterval(this.rate_interval);
 		this.thread_interval = setInterval(() => {
 			// If there is a current AJAX call running, don't refresh
 			if(this.currentAJAXCall) return;
@@ -315,6 +320,7 @@ class AppState {
 		formData.append('reply_to', reply_to);
 		formData.append('thread_id', thread_id);
 		formData.append('spend', spend);
+		if(spend && !isNaN(spend*1) && spend > 0) this.transactionCaptcha = captcha_id;
 		formData.append('css', css);
 		if(!reply_to){
 			for(var prop in this.state.current_metadata){ // New thread, send URL metadata for card creation
@@ -359,6 +365,10 @@ class AppState {
 			if(currentThreadId){
 				this.skipFeed = true;
 				this.loadThread(currentThreadId,this.getCachedPass(currentThreadId));
+				if(this.transactionCaptcha){
+					this.skipFeed = true;
+					this.redeemInvoice(this.transactionCaptcha);
+				}
 			}else if(create_thread_form.style.display !== 'none'){
 				document.getElementById('create_thread_toggle_link').click();
 				document.getElementById('thread_content_input').value = '';
@@ -551,7 +561,7 @@ class AppState {
 	}
 
 	loadThread(threadId, password = null){
-		const startMode = threadId == this.getCurrentThreadID()? false: true;
+		const startMode = document.querySelectorAll('.chat').length > 1? false: true;
 		threadId = threadId || this.getCurrentThreadID();
 		document.getElementById('create_thread_container').style.display = 'none';
 		document.getElementById('back_to_threads_bracket').style.display = 'inline-block';
@@ -595,6 +605,7 @@ class AppState {
 		.then(json => {
 			this.currentAJAXCall = false;
 			this.updateTCHeight(); // housekeeping
+			document.getElementById('scroll_to_bottom_container').style.display = 'block';
 			const data = typeof json == 'string'? JSON.parse(json): json;
 			if(!data || typeof data != 'object'){
 				this.feed('Server response parse failed.', true);
@@ -610,8 +621,13 @@ class AppState {
 			threadChats.forEach(chat => {
 
 				// Do not add chats that are already in the thread
-				const existingChat = threadContainer.querySelector(`.chat[data-id="${chat.chat_id}"]`);
-				if(existingChat) return;
+				const existingChat = threadContainer.querySelectorAll(`.chat[data-id="${chat.chat_id}"]`);
+				if(existingChat.length > 0) return; // chat already rendered
+
+				const existingParentChat = document.querySelectorAll(`.thread[data-id="${chat.chat_id}"]`);
+				if(existingParentChat.length > 0) return; // chat already rendered
+
+				if(this.skipAutoScroll) this.newMessages++;
 
 				const chatDiv = document.createElement('div');
 				if(chat.reply_to_id){
@@ -629,11 +645,10 @@ class AppState {
 				var superChatSpan = '';
 				if(chat.superchat && !isNaN(chat.superchat*1) && chat.superchat > 0){
 					chatDiv.classList.add('superchat');
-					superChatSpan 	= '<span class="superchat_amount">';
 					const fiatStr 	= this.satoshiToFiatStr(chat.superchat);
 					const cryptoStr = this.satoshiToCryptoStr(chat.superchat);
-					superChatSpan += `${fiatStr}&nbsp;&nbsp;|&nbsp;&nbsp;${cryptoStr}`;
-					superChatSpan += '</span><hr>';
+					const star 		= this.heroicon('star').outerHTML || '⭐';
+					superChatSpan += `<div class="superchat_amount">${star}&nbsp;&nbsp;${fiatStr}&nbsp;&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;${star}</div>`;
 				}
 				if(chat.invoice_id && this.state.my_invoice_ids.indexOf(chat.invoice_id*1) > -1){
 					const hasThreadClass = chatDiv.classList.contains('thread');
@@ -680,7 +695,7 @@ class AppState {
 					<input type="hidden" name="thread_id" value="${threadId}">
 					<select name="captcha_id" class="invoice_selector mini"></select>
 					<input type="hidden" name="reply_to" value="${chat.chat_id}">
-					<input type="text" name="content" id="reply_text_input_${chat.chat_id}" placeholder="Reply...">
+					<input type="text" data-chat-id="${chat.chat_id}" name="content" id="reply_text_input_${chat.chat_id}" class="chat_input" placeholder="Reply...">
 					<div class="reply_form_super_chat_input_container hidden" id="spend_on_chat_${chat.chat_id}_container">
 						<input type="number" placeholder="Super Chat Spend in USD" id="dollars_on_chat_${chat.chat_id}">
 						<input type="hidden" name="spend" value="0" id="spend_on_chat_${chat.chat_id}" class="superchat_satoshi mini">
@@ -786,6 +801,8 @@ class AppState {
 				threadContainer.appendChild(chatDiv);
 				setTimeout(load_invoice_selectors,50);
 			});
+			const newMsgPlur = this.newMessages == 1? '': 's';
+			document.getElementById('new_msg_indicator').textContent = this.newMessages > 0? `${this.newMessages} New Message${newMsgPlur}`: 'Latest';
 			this.updateReactions(data.reactions);
 
 			// created embedded reply_to_clone divs
@@ -863,7 +880,9 @@ class AppState {
 			}
 
 			// scroll to btm of thread_container
-			document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
+			if(startMode || !this.skipAutoScroll){
+				this.scrolldown();
+			}
 		})
 		.catch(error => {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
@@ -884,6 +903,7 @@ class AppState {
 	}
 
 	getThreads(url_arg, metadata){
+		document.getElementById('scroll_to_bottom_container').style.display = 'none';
 		document.getElementById('frozen_thread_container').innerHTML = '';
 		this.updateCurrentMetadata(metadata);
 		if(this.skipLoadThreads){
@@ -1111,7 +1131,13 @@ class AppState {
 		const f 		= document.getElementById('feed');
 		if(!f) return;
 		f.innerHTML 	= arg.toString() || "&nbsp;";
-		f.style.color 	= err? "rgb(255,0,0)": "rgb(1,64,54)";
+		f.style.color 	= err? "rgb(255,110,110)": "rgb(1,64,54)";
+		const version 	= document.createElement('span');
+		version.style.fontSize = '9px';
+		version.style.opacity = '0.6';
+		version.classList.add('pull-right');
+		version.textContent = `v${this.version}`;
+		f.appendChild(version);
 	}
 
 	updateConversionRates(){
@@ -1142,6 +1168,13 @@ class AppState {
 					return;
 				}
 				this.conversionRates = data;
+
+				// gui
+				const conversionRateIndicator = document.getElementById('conversion_rate');
+				if(conversionRateIndicator){
+					const cryptoPrice = this.satoshiToFiatStr(this.cryptoToSatoshi(1));
+					conversionRateIndicator.textContent = `1 ₿ = ${cryptoPrice}`;
+				}
 			})
 			.catch(error => {
 				console.error(error);
@@ -1268,7 +1301,7 @@ class AppState {
 			case 'GEL': curr_char = '₾'; break;
 			default:;
 		}
-		return curr_char + this.satoshiToFiat(satoshi).toFixed(curr_accuracy);
+		return curr_char + this.satoshiToFiat(satoshi).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 	}
 	
 	rebuildSettingsForm() {
@@ -1392,13 +1425,14 @@ class AppState {
 
 			// Create and append invoice details
 			const nameElement = document.createElement('strong');
-			nameElement.textContent = name;
+			nameElement.textContent = name.substring(0, 5) + '...';
 			invoiceDiv.appendChild(nameElement);
 			invoiceDiv.appendChild(document.createElement('br'));
 
 			const urlElement = document.createElement('a');
 			urlElement.textContent = `${invoice.server_url.replace('https://','').replace('http://','')}`;
 			urlElement.href = invoice.server_url;
+			urlElement.style.fontSize = '9px';
 			urlElement.target = '_blank';
 			invoiceDiv.appendChild(urlElement);
 
@@ -1473,60 +1507,7 @@ class AppState {
 
 				// Get the captcha ID from the clicked element
 				const captchaId = e.target.getAttribute('data-captcha-id');
-				const settings = this.getSettings();
-				const redeemEndpoint = `${settings.server_url}/redeem_invoice`;
-				const formData = new FormData();
-				formData.append('captcha_id', captchaId);
-				formData.append('secret', this.state.invoices[captchaId].secret);
-
-				// Send the POST request to redeem the invoice
-				this.currentAJAXCall = true;
-				fetch(redeemEndpoint, {
-					method: 'POST',
-					body: formData
-				})
-				.then(response => {
-					this.currentAJAXCall = false;
-					if (response.ok) {
-						return response.text();
-					} else {
-						throw new Error('Network response was not ok');
-					}
-				})
-				.then(json => {
-					this.currentAJAXCall = false;
-					const data = typeof json == 'string'? JSON.parse(json): json;
-					if(!data || typeof data != 'object'){
-						this.feed('Server response parse failed.', true);
-						return;
-					}
-					if(data.error){
-						this.feed(`Error: ${data.error.toString()}`, true);
-					}if(data.msg){
-						this.feed(data.msg);
-						this.state.invoices[captchaId].rows_remaining 	= data.rows_remaining 	|| 0;
-						this.state.invoices[captchaId].satoshi_paid 	= data.satoshi_paid 	|| 0;
-						this.state.invoices[captchaId].btc_paid 		= data.btc_paid			|| 0;
-						this.state.invoices[captchaId].balance 			= data.balance			|| 0;
-						this.state.invoices[captchaId].rate_quote 		= data.rate_quote		|| 0;
-						this.state.invoices[captchaId].link 			= data.link				|| null;
-						this.state.invoices[captchaId].exchange_rate 	= data.exchange_rate	|| "...";
-						this.state.invoices[captchaId].currency_pair 	= data.currency_pair	|| "...";
-						this.state.invoices[captchaId].server_url		= this.state.settings.server_url.toString();
-						if (!isNaN(data.exchange_rate*1)) {
-							this.state.invoices[captchaId].conv_balance = data.exchange_rate * (data.balance / 100000000);
-						}
-						this.saveState();
-						this.rebuildInvoiceList();
-					}
-				})
-				.catch(error => {
-					this.feed('There has been a problem with your fetch operation. See console.', true);
-					console.error(error);
-				})
-				.finally(() => {
-					this.currentAJAXCall = false;
-				});
+				this.redeemInvoice(captchaId);
 			});
 			invoiceDiv.appendChild(redeemLink);
 
@@ -1614,7 +1595,7 @@ class AppState {
 		}
 
 		// Tell users how many invoices they have
-		document.getElementById('invoice_count_indicator').innerHTML = `Total Invoices: ${total_invoices}<br>Server Invoices: ${server_invoices}`;
+		document.getElementById('invoice_count_indicator').innerHTML = `Total Wallets: ${total_invoices}<br>Server Wallets: ${server_invoices}`;
 		
 		// Sort by date created with newest at top.
 		const elements = Array.from(container.children);
@@ -1626,6 +1607,63 @@ class AppState {
 		elements.forEach(element => container.appendChild(element));
 	}
 
+	redeemInvoice(captchaId){
+		const settings = this.getSettings();
+		const redeemEndpoint = `${settings.server_url}/redeem_invoice`;
+		const formData = new FormData();
+		formData.append('captcha_id', captchaId);
+		formData.append('secret', this.state.invoices[captchaId].secret);
+
+		// Send the POST request to redeem the invoice
+		this.currentAJAXCall = true;
+		fetch(redeemEndpoint, {
+			method: 'POST',
+			body: formData
+		})
+		.then(response => {
+			this.currentAJAXCall = false;
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
+			}
+		})
+		.then(json => {
+			this.currentAJAXCall = false;
+			const data = typeof json == 'string'? JSON.parse(json): json;
+			if(!data || typeof data != 'object'){
+				this.feed('Server response parse failed.', true);
+				return;
+			}
+			if(data.error){
+				this.feed(`Error: ${data.error.toString()}`, true);
+			}if(data.msg){
+				this.feed(data.msg);
+				this.state.invoices[captchaId].rows_remaining 	= data.rows_remaining 	|| 0;
+				this.state.invoices[captchaId].satoshi_paid 	= data.satoshi_paid 	|| 0;
+				this.state.invoices[captchaId].btc_paid 		= data.btc_paid			|| 0;
+				this.state.invoices[captchaId].balance 			= data.balance			|| 0;
+				this.state.invoices[captchaId].rate_quote 		= data.rate_quote		|| 0;
+				this.state.invoices[captchaId].link 			= data.link				|| null;
+				this.state.invoices[captchaId].exchange_rate 	= data.exchange_rate	|| "...";
+				this.state.invoices[captchaId].currency_pair 	= data.currency_pair	|| "...";
+				this.state.invoices[captchaId].server_url		= this.state.settings.server_url.toString();
+				if (!isNaN(data.exchange_rate*1)) {
+					this.state.invoices[captchaId].conv_balance = data.exchange_rate * (data.balance / 100000000);
+				}
+				this.saveState();
+				this.rebuildInvoiceList();
+			}
+		})
+		.catch(error => {
+			this.feed('There has been a problem with your fetch operation. See console.', true);
+			console.error(error);
+		})
+		.finally(() => {
+			this.currentAJAXCall = false;
+		});
+	}
+
 	heroicon(name) {
 		const svgContainer = document.getElementById('heroicon-' + name);
 		if (svgContainer) {
@@ -1633,6 +1671,18 @@ class AppState {
 			if (svg) return svg.cloneNode(true);
 		}
 		return false;
+	}
+
+	scrolldown() {
+		this.newMessages = 0;
+		this.skipAutoScroll = false;
+		document.getElementById('scroll_to_bottom_container').classList.add('faded');
+		document.getElementById('new_msg_indicator').textContent = 'Latest';
+		console.log("SCROLLDOWN START!");
+		setTimeout(() => {
+			document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
+			console.log("SCROLLDOWN END!");
+		}, 10);
 	}
 }
 
@@ -1705,7 +1755,7 @@ function load_invoice_selectors(){
 			var cur_bal = app.satoshiToFiatStr(balance);
 			const option = document.createElement('option');
 			option.value = captchaId;
-			option.textContent = `${String(balance).padStart(8,"0")}  |  ${cur_bal}  |  ${captchaId}`;
+			option.textContent = `${String(balance).padStart(8,"0")}  |  ${cur_bal}  |  ${captchaId.substring(0, 5)}...`;
 			invoiceSelector.appendChild(option);
 		}
 	}
@@ -1797,5 +1847,36 @@ document.addEventListener('DOMContentLoaded', () => {
 	rollupToggle.appendChild(rollupIcon);
 	document.getElementById('back_to_threads_bracket').addEventListener('click', () => {
 		app.getThreads();
+	});
+	document.getElementById('thread_container').addEventListener('scroll', () => {
+		const threadContainer = document.getElementById('thread_container');
+		// isScrolledToBottom should check if the user is scrolled within 10px of the bottom
+		const isScrolledToBottom = threadContainer.scrollHeight - threadContainer.clientHeight <= threadContainer.scrollTop + 10;
+		if(isScrolledToBottom){
+			app.newMessages = 0;
+			app.skipAutoScroll = false;
+			document.getElementById('scroll_to_bottom_container').classList.add('faded');
+			document.getElementById('new_msg_indicator').textContent = 'Latest';
+		}else{
+			app.skipAutoScroll = true;
+			document.getElementById('scroll_to_bottom_container').classList.remove('faded');
+		}
+	});
+	document.getElementById('scroll_to_bottom_link').addEventListener('click', event => {
+		event.preventDefault();
+		app.scrolldown();
+	});
+	document.addEventListener('keydown', (event) => {
+		const eventTarget = event.target;
+		if(!eventTarget || !eventTarget.classList.contains('chat_input')) return;
+		const chatId = eventTarget.getAttribute('data-chat-id');
+		if(!chatId) return;
+		var sendMoneyLink = document.querySelectorAll(`.send_money_btn[data-chat-id="${chatId}"]`);
+		if(!sendMoneyLink || sendMoneyLink.length < 1) return;
+		sendMoneyLink = sendMoneyLink[0];
+		if(event.key === 'Enter' && event.ctrlKey){
+			event.preventDefault();
+			sendMoneyLink.click();
+		}
 	});
 });

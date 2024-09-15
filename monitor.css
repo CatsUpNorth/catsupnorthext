@@ -226,6 +226,7 @@ a:hover {
 }
 
 #thread_container {
+  position:relative;
   overflow-y:scroll;
   max-width:97%;
   width:auto;
@@ -248,11 +249,12 @@ a:hover {
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(222, 175, 35);
 }
-#server_link {
+#server_link, #conversion_rate{
   color: rgb(188, 172, 129);
   text-decoration: none;
+}
+#server_link{
   cursor: pointer;
-  font-style: italic;
 }
 .chat_reply_btn {
   display: inline-block;
@@ -272,18 +274,33 @@ a:hover {
 .chat_reply_btn:hover {
   opacity:1;
 }
-.superchat{
-  font-size:14px;
-  background-image:linear-gradient(140deg, #EADEDB 0%, rgb(99, 253, 57) 50%, #00ff37 75%);
+.superchat {
+  font-size: 14px;
+  background-image: linear-gradient(140deg, 
+    #a2f8c9 0%,        /* Light green-blue */
+    #57f1df 25%,       /* Light blue-green */
+    #39fcff 50%,       /* Soft blue */
+    #3eceef 75%,       /* Light cyan-blue */
+    #94faf4 100%       /* Very light teal */
+  );
 }
-.my_chat.superchat{
-  background-image:linear-gradient(140deg, #EADEDB 0%, rgb(253, 155, 57) 50%, #ff0000 75%);
+.my_chat.superchat {
+  background-image: linear-gradient(140deg, 
+    #f0cabd 0%,        /* Soft orange-red */
+    #fa876a 25%,       /* Light tomato */
+    #ff886a 50%,       /* Lighter coral */
+    #d59356 75%,       /* Soft orange */
+    #f6d1aa 100%       /* Pale orange */
+  );
 }
 .superchat_amount{
+  display:inline-block;
+  width:100%;
+  text-align: center;
   font-size:16px;
   font-weight:bold;
   color:rgb(1, 64, 54);
-  font-style:italic;
+  border-bottom: 1px solid rgb(1, 64, 54);
 }
 .chat hr {
   margin-top: 2px;
@@ -294,4 +311,17 @@ a:hover {
   border-top: none;
   border-left: none;
   border-right: none;
+}
+#scroll_to_bottom_link{
+  color: rgb(188, 172, 129);
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 12px;
+}
+#scroll_to_bottom_container{
+  text-align: center;
+  max-height: 14px;
+}
+.faded{
+  opacity: 0.4 !important
 }
