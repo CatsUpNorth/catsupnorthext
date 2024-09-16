@@ -53,10 +53,6 @@ body {
   color: rgb(255, 244, 213) !important;
 }
 
-form {
-  margin-top: 20px;
-}
-
 form label {
   display: block;
   margin-bottom: 5px;
@@ -229,17 +225,23 @@ a:hover {
 }
 .my_reaction {
   color: rgb(1, 64, 54) !important;
+  opacity: 1 !important;
 }
 .reaction_container, .chat_info_span {
   font-size:9px;
-  opacity:0.8;
+  opacity:0.95;
   font-style:italic;
 }
 .reaction_container a {
   font-size:9px;
 }
-
+#home {
+  display: flex;
+  flex-direction: column;
+}
 #thread_container {
+  flex-grow: 1; /* Makes this div take up the remaining space */
+  margin:0;
   position:relative;
   overflow-y:scroll;
   max-width:97%;
@@ -352,7 +354,11 @@ a:hover {
 #scroll_to_bottom_container{
   text-align: center;
   max-height: 14px;
+  margin-bottom: 1px;
 }
 .faded{
   opacity: 0.4 !important
+}
+#frozen_thread_container{
+  margin-top:4px;
 }

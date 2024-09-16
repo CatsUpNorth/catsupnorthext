@@ -351,7 +351,6 @@ class AppState {
 		})
 		.then(json => {
 			this.currentAJAXCall = false;
-			this.updateTCHeight(); // housekeeping
 			const data = typeof json == 'string'? JSON.parse(json): json;
 			if(!data || typeof data != 'object'){
 				this.feed('Server response parse failed.', true);
@@ -379,7 +378,6 @@ class AppState {
 			}else{
 				this.feed("ERROR: Thread ID not found.", true);
 			}
-			// TODO: Auto-redeem invoices when chats come back 
 		})
 		.catch(error => {
 			this.feed('There has been a problem with your post operation. See console.', true);
@@ -443,22 +441,12 @@ class AppState {
 		if(!reactions || !Array.isArray(reactions)) return;
 
 		// Get invoice_ids for invoices that have secrets
-		var my_invoice_ids = [];
-		for (let name in this.state.invoices) {
-			if(this.state.invoices[name].secret && typeof this.state.invoices[name].secret == 'string' && this.state.invoices[name].secret.length > 0){
-				var invoice = this.state.invoices[name];
-				if(!('repo' in invoice) || !invoice.repo || typeof invoice.repo != 'string' || invoice.repo.length < 3) continue
-				var repo_split = invoice.repo.split(' ');
-				if(repo_split.length < 1 || isNaN(repo_split[0]*1)) continue;
-				my_invoice_ids.push(repo_split[0]*1);
-			}
-		}
-		if(my_invoice_ids.length <= 0){ // User cannot react without a secret
+		if(this.state.my_invoice_ids.length <= 0){ // User cannot react without a secret
 			const likeButtons = document.querySelectorAll('.reaction_button');
 			likeButtons.forEach((button) => {
 				button.addEventListener('click', (event) => {
 					event.preventDefault();
-					this.feed('You must have an invoice secret.', true);
+					this.feed('You must have an wallet secret to react to threads and chats.', true);
 				});
 			});
 			return;
@@ -476,13 +464,13 @@ class AppState {
 						var btn = document.querySelector(`.like_button[data-chat-id="${chatId}"]`);
 						var cnt = document.querySelector(`.like_count[data-chat-id="${chatId}"]`);
 						if(cnt && !isNaN(cnt.textContent*1)) cnt.textContent = (cnt.textContent*1 + 1).toString();
-						if(my_invoice_ids.indexOf(inv) > -1) btn.classList.add('my_reaction');
+						if(this.state.my_invoice_ids.indexOf(inv) > -1) btn.classList.add('my_reaction');
 						break;
 					case 'down':
 						var btn = document.querySelector(`.dislike_button[data-chat-id="${chatId}"]`);
 						var cnt = document.querySelector(`.dislike_count[data-chat-id="${chatId}"]`);
 						if(cnt && !isNaN(cnt.textContent*1)) cnt.textContent = (cnt.textContent*1 + 1).toString();
-						if(my_invoice_ids.indexOf(inv) > -1) btn.classList.add('my_reaction');
+						if(this.state.my_invoice_ids.indexOf(inv) > -1) btn.classList.add('my_reaction');
 						break;
 					default:;
 				}
@@ -495,11 +483,16 @@ class AppState {
 		// Add event listeners to reaction buttons
 		const likeButtons = document.querySelectorAll('.reaction_button');
 		likeButtons.forEach((button) => {
-			button.addEventListener('click', (event) => {
+
+			// clone and replace button to remove event listeners
+			const clonedButton = button.cloneNode(true);
+			button.parentNode.replaceChild(clonedButton, button);
+
+			clonedButton.addEventListener('click', (event) => {
 				event.preventDefault();
 				if(event.currentTarget.classList.contains('my_reaction')) return; // user already reacted
 				event.currentTarget.classList.add('my_reaction');
-				const counter = event.currentTarget.nextElementSibling;
+				const counter = event.currentTarget.querySelector('.reaction_count');
 				if(counter.classList.contains('reaction_count') && !isNaN(counter.textContent*1)){
 					// preemtively increment the counter
 					counter.textContent = (counter.textContent*1 + 1).toString();
@@ -508,9 +501,9 @@ class AppState {
 				// If the user liked and had already disliked, remove the dislike
 				const findClass = event.currentTarget.classList.contains('like_button')? 'dislike_button': 'like_button';
 				const sibling = event.currentTarget.parentElement.querySelector(`.reaction_button.${findClass}`);
-				if(sibling && sibling.classList.contains('reaction_button') && sibling.classList.contains('my_reaction')){
+				if(sibling && sibling.classList.contains('my_reaction')){
 					sibling.classList.remove('my_reaction');
-					const siblingCounter = sibling.nextElementSibling;
+					const siblingCounter = sibling.querySelector('.reaction_count');
 					if(siblingCounter.classList.contains('reaction_count') && !isNaN(siblingCounter.textContent*1) && siblingCounter.textContent*1 > 0){
 						siblingCounter.textContent = (siblingCounter.textContent*1 - 1).toString();
 					}
@@ -611,7 +604,6 @@ class AppState {
 		})
 		.then(json => {
 			this.currentAJAXCall = false;
-			this.updateTCHeight(); // housekeeping
 			document.getElementById('scroll_to_bottom_container').style.display = 'block';
 			const data = typeof json == 'string'? JSON.parse(json): json;
 			if(!data || typeof data != 'object'){
@@ -892,7 +884,7 @@ class AppState {
 				threadLabel.classList.add('pull-right');
 				threadLabel.classList.add('thread_label');
 				frozenThreadContainer.appendChild(threadLabel);
-				setTimeout(this.updateTCHeight,5);
+				setTimeout(this.updateTCHeight,20);
 			}else{
 				const trd = threadContainer.querySelector('.thread');
 				if(trd) trd.remove();
@@ -910,6 +902,7 @@ class AppState {
 		.finally(() => {
 			this.currentAJAXCall = false;
 		});
+		setTimeout(this.updateTCHeight,20);
 	}
 
 	getCurrentThreadID(){
@@ -1055,7 +1048,7 @@ class AppState {
 				this.updateReactions(data.reactions);
 				// scroll to btm of thread_container
 				document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
-				setTimeout(this.updateTCHeight,5);
+				setTimeout(this.updateTCHeight,20);
 			})
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
@@ -1064,17 +1057,19 @@ class AppState {
 			.finally(() => {
 				this.currentAJAXCall = false;
 			});
+			setTimeout(this.updateTCHeight,20);
 	}
 
 	updateTCHeight(){
-		// adjust the height of #thread_container to fit the window (make sure the page has no y scrollbar)
-		const tc 	= document.getElementById('thread_container');
-		tc.style.height = 10 + "px";
-		const ftc  	= document.getElementById('frozen_thread_container');
-		const top_y = tc.getBoundingClientRect().top*1;
-		const win_h = window.innerHeight*1;
-		const ftc_b = ftc.getBoundingClientRect().bottom*1;
-		tc.style.height = (win_h - ftc_b - top_y) + "px";
+		var win_height			= document.documentElement.clientHeight*1;
+			win_height			= window.innerHeight < win_height? window.innerHeight: win_height;
+		const home				= document.getElementById('home');
+		const home_top			= home.getBoundingClientRect().top*1;
+		const home_style		= window.getComputedStyle(home);
+		const home_margin		= parseFloat(home_style.marginTop) + parseFloat(home_style.marginBottom);
+		const home_padding		= parseFloat(home_style.paddingTop) + parseFloat(home_style.paddingBottom);
+		home.style.height		= (win_height - home_top - home_margin - home_padding - 10) + 'px';
+		home.style.maxHeight 	= (win_height - home_top - home_margin - home_padding) + 'px';
 	}
 
 	// Update settings
@@ -1614,6 +1609,7 @@ class AppState {
 
 			// Append the invoice div to the container
 			container.appendChild(invoiceDiv);
+			setTimeout(load_invoice_selectors, 10);
 		}
 
 		// Tell users how many invoices they have
@@ -1702,6 +1698,7 @@ class AppState {
 		document.getElementById('new_msg_indicator').textContent = 'Latest';
 		setTimeout(() => {
 			document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
+			this.updateTCHeight();
 		}, 10);
 	}
 }
