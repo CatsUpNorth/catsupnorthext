@@ -309,6 +309,8 @@ class AppState {
 
 	// send chat or create threda (reply_to is zero)
 	sendChat(captcha_id, content, reply_to = 0, thread_id = 0, spend = 0, password = null, css = null){
+		document.querySelectorAll('.superchat_input').forEach(   (input) => { input.value = ''; } );
+		document.querySelectorAll('.superchat_satoshi').forEach( (input) => { input.value = 0;  } );
 		const settings 		= this.getSettings();
 		const currentURL 	= this.getCurrentURL();
 		const chatEndpoint 	= `${settings.server_url}/send_chat`;
@@ -388,13 +390,15 @@ class AppState {
 		});
 	}
 	
-	reactDiv(chat_id){
-		const container = document.createElement('div');
-		container.appendChild(document.createElement('br'));
+	reactDiv(chat_id, chat_alias = null){
+		const alias_str = (chat_alias && typeof chat_alias == 'string')? `${chat_alias}<br>`: '';
+		const info_str 	= `<br><span class="chat_info_span">${alias_str}#${chat_id}</span>`;
+		const container = document.createElement('span');
+		container.innerHTML = info_str;
 		const heightFixer = document.createElement('span');
 		heightFixer.classList.add('reaction_height_fixer');
 		heightFixer.innerHTML = '&nbsp;';
-		container.appendChild(heightFixer);
+		heightFixer.style.paddingRight = '5px';
 		container.classList.add('reaction_container');
 		const linkSpan = document.createElement('span');
 		linkSpan.classList.add('reaction_link_span');
@@ -406,6 +410,7 @@ class AppState {
 		likeButton.innerHTML = this.heroicon('hand-thumb-up').outerHTML;
 		likeButton.setAttribute('data-chat-id', chat_id);
 		likeButton.style.paddingRight = '5px';
+		likeButton.style.paddingLeft = '10px';
 		const likeCount = document.createElement('span');
 		likeCount.classList.add('reaction_count');
 		likeCount.classList.add('like_count');
@@ -424,11 +429,13 @@ class AppState {
 		dislikeCount.classList.add('dislike_count');
 		dislikeCount.textContent = '0';
 		dislikeCount.setAttribute('data-chat-id', chat_id);
+		likeButton.appendChild(likeCount);
+		dislikeButton.appendChild(dislikeCount);
+		linkSpan.appendChild(heightFixer);
 		linkSpan.appendChild(likeButton);
-		linkSpan.appendChild(likeCount);
 		linkSpan.appendChild(dislikeButton);
-		linkSpan.appendChild(dislikeCount);
 		container.appendChild(linkSpan);
+		container.appendChild(document.createElement('br'));
 		return container;
 	}
 
@@ -561,7 +568,7 @@ class AppState {
 	}
 
 	loadThread(threadId, password = null){
-		const startMode = document.querySelectorAll('.chat').length > 1? false: true;
+		const startMode = document.querySelectorAll('.chat').length > 0? false: true;
 		threadId = threadId || this.getCurrentThreadID();
 		document.getElementById('create_thread_container').style.display = 'none';
 		document.getElementById('back_to_threads_bracket').style.display = 'inline-block';
@@ -618,18 +625,23 @@ class AppState {
 			this.feed(data.msg);
 			const threadChats = data.chats;
 			threadContainer.classList.add('thread');
-			threadChats.forEach(chat => {
+			threadChats.forEach((chat) => {
 
 				// Do not add chats that are already in the thread
-				const existingChat = threadContainer.querySelectorAll(`.chat[data-id="${chat.chat_id}"]`);
-				if(existingChat.length > 0) return; // chat already rendered
+				var selector = `.chat[data-id="${chat.chat_id}"]`;
+				var existingChat = document.querySelector(selector);
+				if(existingChat) return; // chat already rendered
 
-				const existingParentChat = document.querySelectorAll(`.thread[data-id="${chat.chat_id}"]`);
-				if(existingParentChat.length > 0) return; // chat already rendered
+				selector = `.thread[data-id="${chat.chat_id}"]`;
+				var existingParentChat = document.querySelector(selector);
+				if(existingParentChat) return; // chat already rendered
 
 				if(this.skipAutoScroll) this.newMessages++;
 
 				const chatDiv = document.createElement('div');
+				chatDiv.setAttribute('data-id', `${chat.chat_id}`);
+				chatDiv.setAttribute('data-reply-to-id', `${chat.reply_to_id}`);
+				chatDiv.setAttribute('data-date-submitted', `${chat.date_submitted}`);
 				if(chat.reply_to_id){
 					chatDiv.classList.add('chat');
 				}else{
@@ -639,9 +651,6 @@ class AppState {
 					chatDiv.style.border = 'none';
 					chatDiv.style.backgroundColor = 'rgba(0,0,0,0)';
 				}
-				chatDiv.setAttribute('data-id', `${chat.chat_id}`);
-				chatDiv.setAttribute('data-reply-to-id', `${chat.reply_to_id}`);
-				chatDiv.setAttribute('data-date-submitted', `${chat.date_submitted}`);
 				var superChatSpan = '';
 				if(chat.superchat && !isNaN(chat.superchat*1) && chat.superchat > 0){
 					chatDiv.classList.add('superchat');
@@ -650,23 +659,18 @@ class AppState {
 					const star 		= this.heroicon('star').outerHTML || '⭐';
 					superChatSpan += `<div class="superchat_amount">${star}&nbsp;&nbsp;${fiatStr}&nbsp;&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;${star}</div>`;
 				}
+				chatDiv.innerHTML = superChatSpan;
 				if(chat.invoice_id && this.state.my_invoice_ids.indexOf(chat.invoice_id*1) > -1){
 					const hasThreadClass = chatDiv.classList.contains('thread');
 					chatDiv.classList.add((hasThreadClass? 'my_thread': 'my_chat'));
 				}
 
-				//const reply_to_link	= chat.reply_to_id? `<a href="#chat_id_${chat.reply_to_id}">&nbsp;^${chat.reply_to_id}</a>`: '';
-				const alias_str 	= (chat.alias && typeof chat.alias == 'string')? `&nbsp;&nbsp;<strong style="color:#183f36;">${chat.alias}</strong>`: '';
-				//chatDiv.innerHTML 	= `<strong>${chat.chat_id}${reply_to_link}</strong>${alias_str}`;
-				chatDiv.innerHTML 	= `${superChatSpan}<span style="font-size:9px;opacity:0.6;"><strong>${chat.chat_id}</strong>${alias_str}</span>`;
-
 				const chatContent = document.createElement('strong');
 				// render utf chars as emojies
 				chatContent.textContent = decodeHTMLEntities(chat.chat_content.toString());
-				chatDiv.appendChild(document.createElement('br'));
 				chatDiv.appendChild(chatContent);
 				// Likes and dislikes
-				const reactionContainer = this.reactDiv(chat.chat_id);
+				const reactionContainer = this.reactDiv(chat.chat_id,chat.alias);
 				chatDiv.appendChild(reactionContainer);
 
 				// Reply Form and link to toggle reply form
@@ -697,7 +701,7 @@ class AppState {
 					<input type="hidden" name="reply_to" value="${chat.chat_id}">
 					<input type="text" data-chat-id="${chat.chat_id}" name="content" id="reply_text_input_${chat.chat_id}" class="chat_input" placeholder="Reply...">
 					<div class="reply_form_super_chat_input_container hidden" id="spend_on_chat_${chat.chat_id}_container">
-						<input type="number" placeholder="Super Chat Spend in USD" id="dollars_on_chat_${chat.chat_id}">
+						<input type="number" step="0.01" placeholder="Super Chat Spend in USD" class="superchat_input" id="dollars_on_chat_${chat.chat_id}">
 						<input type="hidden" name="spend" value="0" id="spend_on_chat_${chat.chat_id}" class="superchat_satoshi mini">
 						<span id="satoshi_str_on_chat_${chat.chat_id}"></span>
 					</div>
@@ -794,7 +798,7 @@ class AppState {
 					this.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, formObject.spend);
 				});
 				var heightFixer = reactionContainer.getElementsByClassName('reaction_height_fixer').item(0)
-				heightFixer.innerHTML = "";
+				heightFixer.innerHTML = "&nbsp;";
 				heightFixer.appendChild(replyLink);
 				chatDiv.appendChild(replyForm);
 
@@ -809,23 +813,34 @@ class AppState {
 			const allChatDivs = threadContainer.querySelectorAll('.chat');
 			allChatDivs.forEach((chatDiv) => {
 				const childChats = chatDiv.querySelectorAll('.chat');
-				if(childChats.length < 1) return;
+				if(childChats.length > 0) return;
 				const replyToId = chatDiv.getAttribute('data-reply-to-id');
-				const replyToDiv = threadContainer.querySelector(`.chat[data-id="${replyToId}"]`);
-				if(!replyToDiv) return;
+				const replyToDiv = document.querySelector(`.chat[data-id="${replyToId}"]`);
+				if(!replyToDiv) return; // not a reply, move on
+				if(chatDiv.querySelector('.replied_to_clone')) return; // already has a clone of the replied-to chat, move on
 				// Clone the replied-to chat and prepend it to the current chatDiv
 				const replyToClone = replyToDiv.cloneNode(true);
 				replyToClone.classList.add('replied_to_clone');
+				replyToClone.classList.remove('chat');
 				replyToClone.removeAttribute('data-reply-to-id');
 				replyToClone.removeAttribute('data-id');
+				replyToClone.style.fontSize = '10px';
 
-				// remove .reaction_container div from the clone
-				const reactionContainer = replyToClone.querySelector('.reaction_container');
-				if(reactionContainer) reactionContainer.remove();
+				// remove .reaction_link_span div from the clone
+				const reactionLinkSpan = replyToClone.querySelector('.reaction_link_span');
+				if(reactionLinkSpan) reactionLinkSpan.remove();
 
-				// remove .replied_to_clone div from the clone
+				// remove .replied_to_clone div from the clone if the clone itself is a reply
 				const repliedToClone = replyToClone.querySelector('.replied_to_clone');
 				if(repliedToClone) repliedToClone.remove();
+
+				// superchat span
+				const superChatSpan = replyToClone.querySelector('.superchat_amount');
+				if(superChatSpan) superChatSpan.style.fontSize = '9px';
+
+				// chat_info_span
+				const chatInfoSpan = replyToClone.querySelector('.chat_info_span');
+				if(chatInfoSpan) chatInfoSpan.style.fontSize = '7px';
 
 				// remove .reply_form div from the clone
 				const replyForm = replyToClone.querySelector('.reply_form');
@@ -861,6 +876,7 @@ class AppState {
 					threadParentChat.remove();
 					frozenThreadContainer.appendChild(threadParentChat);
 				}
+				document.querySelectorAll('.back_to_threads_link').forEach((link) => { link.remove(); });
 				const backLink = document.createElement('a');
 				backLink.textContent = '‹ Go back to threads';
 				backLink.href = '#';
@@ -869,9 +885,12 @@ class AppState {
 					this.getThreads();
 				});
 				frozenThreadContainer.appendChild(backLink);
+				document.querySelectorAll('.thread_label').forEach((label) => { label.remove(); });
 				const threadLabel = document.createElement('strong');
+				threadLabel.setAttribute('id', 'thread_label');
 				threadLabel.innerHTML = `Thread <span id="cur_thread_id_container">${threadId}</span>`;
 				threadLabel.classList.add('pull-right');
+				threadLabel.classList.add('thread_label');
 				frozenThreadContainer.appendChild(threadLabel);
 				setTimeout(this.updateTCHeight,5);
 			}else{
@@ -905,6 +924,9 @@ class AppState {
 	getThreads(url_arg, metadata){
 		document.getElementById('scroll_to_bottom_container').style.display = 'none';
 		document.getElementById('frozen_thread_container').innerHTML = '';
+		document.getElementById('thread_container').classList.remove('thread');
+		if(document.getElementById('cur_thread_id_container')) document.getElementById('cur_thread_id_container').remove();
+		if(document.getElementById('thread_label')) document.getElementById('thread_label').remove();
 		this.updateCurrentMetadata(metadata);
 		if(this.skipLoadThreads){
 			this.skipLoadThreads = false;
@@ -978,7 +1000,7 @@ class AppState {
 					}
 					const password_xml = thread.password_required? this.heroicon('lock-closed').outerHTML: '';
 					const loadThreadLink = document.createElement('a');
-					loadThreadLink.innerHTML = `<span style="font-size:9px;opacity:0.6;"><strong style="color:grey;">${thread.thread_id}.${thread.chat_id}</strong>${alias_str}<span class="pull-right">${password_xml}</span></span><br><strong>${thread.chat_content}</strong>`;
+					loadThreadLink.innerHTML = `<span style="font-size:9px;opacity:0.6;"><strong style="color:grey;">Thread ${thread.thread_id}</strong>${alias_str}<span class="pull-right">${password_xml}</span></span><br><strong>${thread.chat_content}</strong>`;
 					loadThreadLink.setAttribute('data-thread-id', thread.thread_id);
 					loadThreadLink.classList.add('thread_opener');
 					if(thread.password_required) loadThreadLink.classList.add('password_required');
@@ -1678,10 +1700,8 @@ class AppState {
 		this.skipAutoScroll = false;
 		document.getElementById('scroll_to_bottom_container').classList.add('faded');
 		document.getElementById('new_msg_indicator').textContent = 'Latest';
-		console.log("SCROLLDOWN START!");
 		setTimeout(() => {
 			document.getElementById('thread_container').scrollTop = document.getElementById('thread_container').scrollHeight;
-			console.log("SCROLLDOWN END!");
 		}, 10);
 	}
 }

@@ -119,30 +119,31 @@ a:hover {
   opacity: 1;
 }
 
-.thread, .chat {
+.thread, .chat, .replied_to_clone {
   padding: 5px;
   margin-bottom: 12px;
   border-radius:5px;
   border: 1px solid rgba(1, 64, 54,0.5);
+  opacity:0.9;
 }
 .thread {
   font-size:14px;
-  background-color: rgb(219, 204, 160);
+  background-color: rgba(219, 210, 185, 1);
   margin-left: 0;
   box-shadow: rgba(0, 0, 0, 0.19) 0px 10px 18px, rgba(0, 0, 0, 0.23) 0px 6px 6px;
 }
-.chat {
+.chat, .replied_to_clone {
   margin-left:0;
   font-size:11px;
-  background-color: rgb(157, 201, 169);
+  background-color: rgb(204, 230, 211);
   max-width:70% !important;
   box-shadow: rgba(0, 0, 0, 0.19) 0px 10px 20px, rgba(0, 0, 0, 0.23) 0px 6px 6px;
 }
 .my_thread {
-  background-color: rgb(253, 155, 57);
+  background-color: rgb(224, 198, 172);
 }
 .my_chat {
-  background-color: rgb(253, 155, 57);
+  background-color: rgb(230, 198, 166);
   margin-left:20% !important;
   margin-right: 0;
 }
@@ -217,12 +218,25 @@ a:hover {
 }
 
 .reaction_link_span, .reaction_link_span a {
-  color: rgb(151, 151, 151);
+  color: rgb(1, 64, 54) !important;
   text-decoration: none;
   cursor: pointer;
+  font-size:11px;
+  opacity: 0.6;
+}
+.reaction_link_span a:hover {
+  opacity: 1;
 }
 .my_reaction {
   color: rgb(1, 64, 54) !important;
+}
+.reaction_container, .chat_info_span {
+  font-size:9px;
+  opacity:0.8;
+  font-style:italic;
+}
+.reaction_container a {
+  font-size:9px;
 }
 
 #thread_container {
@@ -275,30 +289,47 @@ a:hover {
   opacity:1;
 }
 .superchat {
+  opacity:1;
   font-size: 14px;
   background-image: linear-gradient(140deg, 
-    #a2f8c9 0%,        /* Light green-blue */
-    #57f1df 25%,       /* Light blue-green */
-    #39fcff 50%,       /* Soft blue */
-    #3eceef 75%,       /* Light cyan-blue */
-    #94faf4 100%       /* Very light teal */
+    #07f170 0%,        /* Light green-blue */
+    #81ede1 25%,       /* Light blue-green */
+    #04b7fe 50%,       /* Soft blue */
+    #81daed 75%,       /* Light cyan-blue */
+    #235ef5 100%       /* Very light teal */
   );
+  background-size: 200% 100%;  /* Make the background larger */
+  animation: glimmer 2s ease-in-out infinite;  /* Apply animation */
 }
 .my_chat.superchat {
+  opacity:1;
   background-image: linear-gradient(140deg, 
-    #f0cabd 0%,        /* Soft orange-red */
+    #e92525 0%,        /* Soft orange-red */
     #fa876a 25%,       /* Light tomato */
-    #ff886a 50%,       /* Lighter coral */
+    #e83b0f 50%,       /* Lighter coral */
     #d59356 75%,       /* Soft orange */
-    #f6d1aa 100%       /* Pale orange */
+    #ff8400 100%       /* Pale orange */
   );
+  background-size: 200% 100%;  /* Make the background larger */
+  animation: glimmer 2s ease-in-out infinite;  /* Apply animation */
+}
+@keyframes glimmer {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 0%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
 }
 .superchat_amount{
   display:inline-block;
   width:100%;
   text-align: center;
-  font-size:16px;
-  font-weight:bold;
+  font-size:12px;
+  font-weight:900;
   color:rgb(1, 64, 54);
   border-bottom: 1px solid rgb(1, 64, 54);
 }
