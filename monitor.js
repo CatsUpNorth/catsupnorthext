@@ -818,6 +818,14 @@ class AppState {
 				replyToClone.removeAttribute('data-id');
 				replyToClone.style.fontSize = '10px';
 
+				// lock in the font color
+				replyToClone.querySelectorAll('span').forEach((span) => {
+					span.style.color = replyToClone.classList.contains('superchat')? 'white': 'black';
+				});
+				replyToClone.querySelectorAll('strong').forEach((strong) => {
+					strong.style.color = replyToClone.classList.contains('superchat')? 'white': 'black';
+				});
+
 				// remove .reaction_link_span div from the clone
 				const reactionLinkSpan = replyToClone.querySelector('.reaction_link_span');
 				if(reactionLinkSpan) reactionLinkSpan.remove();

@@ -214,7 +214,7 @@ a:hover {
 }
 
 .reaction_link_span, .reaction_link_span a {
-  color: rgb(1, 64, 54) !important;
+  color: rgb(1, 64, 54);
   text-decoration: none;
   cursor: pointer;
   font-size:11px;
@@ -291,29 +291,36 @@ a:hover {
   opacity:1;
 }
 .superchat {
+  color:white;
   opacity:1;
   font-size: 14px;
   background-image: linear-gradient(140deg, 
-    #07f170 0%,        /* Light green-blue */
-    #81ede1 25%,       /* Light blue-green */
-    #04b7fe 50%,       /* Soft blue */
-    #81daed 75%,       /* Light cyan-blue */
-    #235ef5 100%       /* Very light teal */
+    #2e07f1 0%,        /* Light green-blue */
+    #1d05bc 25%,       /* Light blue-green */
+    #002cf1 50%,       /* Soft blue */
+    #024c8d 75%,       /* Light cyan-blue */
+    #023951 100%       /* Very light teal */
   );
   background-size: 200% 100%;  /* Make the background larger */
   animation: glimmer 2s ease-in-out infinite;  /* Apply animation */
 }
 .my_chat.superchat {
+  color:white;
   opacity:1;
   background-image: linear-gradient(140deg, 
-    #e92525 0%,        /* Soft orange-red */
-    #fa876a 25%,       /* Light tomato */
-    #e83b0f 50%,       /* Lighter coral */
-    #d59356 75%,       /* Soft orange */
-    #ff8400 100%       /* Pale orange */
+    #c20124 0%,        /* Soft orange-red */
+    #870218 25%,       /* Light tomato */
+    #bf0902 50%,       /* Lighter coral */
+    #c24400 75%,       /* Soft orange */
+    #9a4f00 100%       /* Pale orange */
   );
   background-size: 200% 100%;  /* Make the background larger */
   animation: glimmer 2s ease-in-out infinite;  /* Apply animation */
+}
+.superchat a, .superchat.reaction_link_span a , .superchat.reaction_link_span a.my_reaction {
+  color:white !important;
+  text-decoration: none;
+  cursor:pointer;
 }
 @keyframes glimmer {
   0% {
@@ -332,7 +339,7 @@ a:hover {
   text-align: center;
   font-size:12px;
   font-weight:900;
-  color:rgb(1, 64, 54);
+  color:rgb(255, 242, 0);
   border-bottom: 1px solid rgb(1, 64, 54);
 }
 .chat hr {
