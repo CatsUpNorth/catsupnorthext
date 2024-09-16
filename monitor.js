@@ -749,7 +749,7 @@ class AppState {
 							const dollars = event.target.value;
 							if(dollars && !isNaN(dollars*1) && dollars*1 > 0){
 								const satoshi 	= this.fiatToSatoshi(dollars);
-								const cryptoStr = this.fiatToCryptoStr(satoshi);
+								const cryptoStr = this.fiatToCryptoStr(dollars);
 								satoshiInput.value = satoshi;
 								satoshiStr.textContent = `${satoshi} sats | ${cryptoStr}`;
 							}else{
@@ -785,6 +785,8 @@ class AppState {
 					if (spendInput) spendInput.value = 0;
 					const dollarsInput = document.getElementById(`dollars_on_chat_${chat_id}`);
 					if (dollarsInput) dollarsInput.value = '';
+					const satoshiStr = document.getElementById(`satoshi_str_on_chat_${chat_id}`);
+					if (satoshiStr) satoshiStr.textContent = '...';
 					const formParentDiv = event.target.parentElement;
 					if(formParentDiv.classList.contains('chat')){
 						formParentDiv.querySelector('.chat_reply_link').click();
