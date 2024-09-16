@@ -687,15 +687,17 @@ class AppState {
 				sendSVG = sendSVG? sendSVG.outerHTML: 'Send';
 				var hideSVG = this.heroicon('eye-slash');
 				hideSVG = hideSVG? hideSVG.outerHTML: 'PM';
+				const fiatCode = this.getSettings().fiat_code;
+				const fiatSymbol = this.fiatCodeToSymbol(fiatCode);
 				replyForm.innerHTML = `
 					<input type="hidden" name="thread_id" value="${threadId}">
 					<select name="captcha_id" class="invoice_selector mini"></select>
 					<input type="hidden" name="reply_to" value="${chat.chat_id}">
-					<input type="text" data-chat-id="${chat.chat_id}" name="content" id="reply_text_input_${chat.chat_id}" class="chat_input" placeholder="Reply...">
+					<input type="text" data-chat-id="${chat.chat_id}" name="content" id="reply_text_input_${chat.chat_id}" class="chat_input" placeholder="Reply to chat, CTRL + Enter to send ₿">
 					<div class="reply_form_super_chat_input_container hidden" id="spend_on_chat_${chat.chat_id}_container">
-						<input type="number" step="0.01" placeholder="Super Chat Spend in USD" class="superchat_input" id="dollars_on_chat_${chat.chat_id}">
+						${fiatSymbol}&nbsp;<input type="number" step="0.01" placeholder="Super Chat Spend in ${fiatCode}" class="superchat_input" id="dollars_on_chat_${chat.chat_id}">
 						<input type="hidden" name="spend" value="0" id="spend_on_chat_${chat.chat_id}" class="superchat_satoshi mini">
-						<span id="satoshi_str_on_chat_${chat.chat_id}"></span>
+						<br><span id="satoshi_str_on_chat_${chat.chat_id}"></span>
 					</div>
 					<br>&nbsp;<input type="submit" name="reply" value="" id="reply_text_submit_${chat.chat_id}" style="opacity:0;width:2px;height:2px;">`;
 
@@ -752,7 +754,7 @@ class AppState {
 								satoshiStr.textContent = `${satoshi} sats | ${cryptoStr}`;
 							}else{
 								satoshiInput.value = 0;
-								satoshiStr.textContent = '&nbsp;';
+								satoshiStr.textContent = '...';
 							}
 						});
 
@@ -862,7 +864,7 @@ class AppState {
 					const replyForm = threadParentChat.querySelector('.reply_form[data-chat-id="' + threadParentChatId + '"]');
 					if(replyForm){ // Remove the reply form from the first .thread and add it to the end of the threadContainer
 						const textInput = replyForm.querySelector('input[name="content"]');
-						if (textInput) textInput.placeholder = 'Reply to thread...';
+						if (textInput) textInput.placeholder = 'Reply to thread, CTRL + Enter to send ₿';
 						const replyBtn = replyForm.querySelector('input[name="reply"]');
 						if (replyBtn) replyBtn.value = 'Send';
 						replyForm.remove();
@@ -1248,11 +1250,8 @@ class AppState {
 		return this.satoshiToCrypto(satoshi) + " ₿";
 	}
 
-	satoshiToFiatStr(satoshi){
-		const fiat_code = this.getSettings()?.fiat_code || null;
-		if (!fiat_code) return "---";
-		var curr_char 		= fiat_code + '',
-			curr_accuracy 	= 2;
+	fiatCodeToSymbol(fiat_code){
+		var curr_char 		= fiat_code + '';
 		switch(fiat_code){
 			case 'USD': curr_char = '$'; break;
 			case 'EUR': curr_char = '€'; break;
@@ -1326,7 +1325,15 @@ class AppState {
 			case 'GEL': curr_char = '₾'; break;
 			default:;
 		}
-		return curr_char + this.satoshiToFiat(satoshi).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+		return curr_char;
+	}
+
+	satoshiToFiatStr(satoshi){
+		const fiat_code = this.getSettings()?.fiat_code || null;
+		if (!fiat_code) return "---";
+		const curr_char		= this.fiatCodeToSymbol(fiat_code);
+		var curr_accuracy 	= 2; // TODO: Add special cases for certain fiat codes
+		return curr_char + this.satoshiToFiat(satoshi).toLocaleString(undefined, { minimumFractionDigits: curr_accuracy, maximumFractionDigits: curr_accuracy });
 	}
 	
 	rebuildSettingsForm() {
@@ -1734,16 +1741,20 @@ function show_tab(tabId) {
 	tabs.forEach(tab => {
 		if (tab.id === `tab-${tabId}`) {
 			tab.classList.add('active');
+			tab.classList.remove('inactive');
 		} else {
 			tab.classList.remove('active');
+			tab.classList.add('inactive');
 		}
 	});
 
 	tabContents.forEach(content => {
 		if (content.id === tabId) {
 			content.classList.add('active');
+			content.classList.remove('inactive');
 		} else {
 			content.classList.remove('active');
+			content.classList.add('inactive');
 		}
 	});
 

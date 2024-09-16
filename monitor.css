@@ -11,7 +11,7 @@ body {
   justify-content: space-between;
 }
 
-.tab {
+.tab, .tab.inactive {
   font-size:16px;
   border-radius: 5px 5px 0 0;
   flex: 1;
@@ -42,6 +42,9 @@ body {
 
 .tab-content.active {
   display: block;
+}
+.tab-content.inactive {
+  display: none !important;
 }
 
 #feed {
@@ -157,6 +160,7 @@ a:hover {
   background-color: rgb(255,110,110);
 }
 .reply_form {
+  margin-top:5px;
   border:1px solid rgb(1, 64, 54);
   border-radius:3px;
   padding:3px;
@@ -166,17 +170,16 @@ a:hover {
   width: 100% !important;
   border: none !important;
   outline: none !important;
-  background-color: rgba(0,0,0,0) !important;
+  background-color: rgba(255,255,255,0.4) !important;
   color: rgb(1, 64, 54) !important;
 }
 .reply_form input[type="text"]:hover, .reply_form input[type="number"] {
-  background-color: rgba(0,0,0,0) !important;
+  background-color: rgba(255,255,255,0.4) !important;
 }
 .reply_form input[type="number"] {
-  width: 100% !important;
-  border: 1px solid rgb(1, 64, 54) !important;
-  background-color: rgba(0,0,0,0) !important;
-  color: rgb(1, 64, 54) !important;
+  width: 40% !important;
+  border: none !important;
+  outline: none !important;
   height:40px;
 }
 .reply_form button{
@@ -231,6 +234,7 @@ a:hover {
   font-size:9px;
   opacity:0.95;
   font-style:italic;
+  height:auto;
 }
 .reaction_container a {
   font-size:9px;
@@ -341,6 +345,7 @@ a:hover {
   font-weight:900;
   color:rgb(255, 242, 0);
   border-bottom: 1px solid rgb(1, 64, 54);
+  text-shadow: #FC0%201px%200%2010px;
 }
 .chat hr {
   margin-top: 2px;
