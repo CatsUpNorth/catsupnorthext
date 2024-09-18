@@ -15,7 +15,7 @@ class AppState {
 			thread_refresh_rate: 	60_000,
 			chat_refresh_rate: 		500,
 			autoload_threads: 		false,
-			url_preview_max_len: 	50,
+			url_preview_max_len: 	40,
 			min_spend_threshold: 	1,
 			fiat_code: 				'USD',
 		};
@@ -388,9 +388,34 @@ class AppState {
 	
 	reactDiv(chat_id, chat_alias = null, timestamp = null){
 		var alias_str = (chat_alias && typeof chat_alias == 'string')? `${chat_alias}`: '';
-		const info_str 	= `<br><span class="chat_info_span">${alias_str}<br>#${chat_id}</span>`;
 		const container = document.createElement('span');
-		container.innerHTML = info_str;
+		var date_str = '';
+		if(timestamp && typeof timestamp == 'string' && timestamp.length > 0){
+			// Attempt to parse the timestamp and reformat as date + timezone
+			try{
+				const dateObj = new Date(timestamp);
+				date_str = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], {
+					hour: '2-digit',
+					minute: '2-digit'
+				});
+			}catch(e){
+				date_str = timestamp.split(" ");
+				date_str = date_str.length > 5? date_str[0] + ' ' + date_str[1] + ' ' + date_str[2] + ' ' + date_str[3] + ' ' + date_str[5]: date_str.join(" ");
+			}
+		}
+		const info_str 	= `&nbsp;${alias_str}<br>${date_str}`;
+		const chatInfo = document.createElement('span');
+		chatInfo.innerHTML = info_str;
+		chatInfo.classList.add('chat_info');
+		container.appendChild(document.createElement('br'));
+		if(alias_str.startsWith('$')){
+			const followLink = document.createElement('a');
+			followLink.href = '#';
+			followLink.innerHTML = this.heroicon('user-plus').outerHTML + '&nbsp;Follow';
+			followLink.title = `Follow user ${alias_str}`;
+			container.appendChild(followLink);
+		}
+		container.appendChild(chatInfo);
 		const heightFixer = document.createElement('span');
 		heightFixer.classList.add('reaction_height_fixer');
 		heightFixer.innerHTML = '&nbsp;';
@@ -430,24 +455,13 @@ class AppState {
 		linkSpan.appendChild(heightFixer);
 		linkSpan.appendChild(likeButton);
 		linkSpan.appendChild(dislikeButton);
+		const chatIdSpan = document.createElement('span');
+		chatIdSpan.style.opacity = '0.4';
+		chatIdSpan.innerHTML = `#${chat_id}`;
+		container.appendChild(document.createElement('br'));
+		container.appendChild(chatIdSpan);
 		container.appendChild(linkSpan);
 		container.appendChild(document.createElement('br'));
-		var date_str = '';
-		if(timestamp && typeof timestamp == 'string' && timestamp.length > 0){
-			// Attempt to parse the timestamp and reformat as date + timezone
-			try{
-				const dateObj = new Date(timestamp);
-				date_str = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString();
-			}catch(e){
-				date_str = timestamp.split(" ");
-				date_str = date_str.length > 5? date_str[0] + ' ' + date_str[1] + ' ' + date_str[2] + ' ' + date_str[3] + ' ' + date_str[5]: date_str.join(" ");
-			}
-		}
-		const dateSpan = document.createElement('span');
-		dateSpan.innerHTML = date_str;
-		dateSpan.style.opacity = '0.4';
-		container.appendChild(document.createElement('br'));
-		container.appendChild(dateSpan);
 		return container;
 	}
 
