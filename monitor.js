@@ -383,10 +383,11 @@ class AppState {
 		})
 		.finally(() => {
 			this.currentAJAXCall = false;
+			document.getElementById('cancel_cross_post').click();
 		});
 	}
 	
-	reactDiv(chat_id, chat_alias = null, timestamp = null){
+	reactDiv(chat_id, chat_alias = null, timestamp = null, is_me = false){
 		var alias_str = (chat_alias && typeof chat_alias == 'string')? `${chat_alias}`: '';
 		const container = document.createElement('span');
 		var date_str = '';
@@ -408,7 +409,7 @@ class AppState {
 		chatInfo.innerHTML = info_str;
 		chatInfo.classList.add('chat_info');
 		container.appendChild(document.createElement('br'));
-		if(alias_str.startsWith('$')){
+		if(!is_me && alias_str.startsWith('$')){
 			const followLink = document.createElement('a');
 			followLink.href = '#';
 			followLink.innerHTML = this.heroicon('user-plus').outerHTML + '&nbsp;Follow';
@@ -647,6 +648,8 @@ class AppState {
 			threadContainer.classList.add('thread');
 			threadChats.forEach((chat) => {
 
+				const isMe = chat.invoice_id && this.state.my_invoice_ids.indexOf(chat.invoice_id*1) > -1;
+
 				// Do not add chats that are already in the thread
 				var selector = `.chat[data-id="${chat.chat_id}"]`;
 				var existingChat = document.querySelector(selector);
@@ -680,7 +683,7 @@ class AppState {
 					superChatSpan += `<div class="superchat_amount">${star}&nbsp;&nbsp;${fiatStr}&nbsp;&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;${star}</div>`;
 				}
 				chatDiv.innerHTML = superChatSpan;
-				if(chat.invoice_id && this.state.my_invoice_ids.indexOf(chat.invoice_id*1) > -1){
+				if(isMe){
 					const hasThreadClass = chatDiv.classList.contains('thread');
 					chatDiv.classList.add((hasThreadClass? 'my_thread': 'my_chat'));
 				}
@@ -690,7 +693,7 @@ class AppState {
 				chatContent.textContent = decodeHTMLEntities(chat.chat_content.toString());
 				chatDiv.appendChild(chatContent);
 				// Likes and dislikes
-				const reactionContainer = this.reactDiv(chat.chat_id,chat.alias,chat.date_submitted);
+				const reactionContainer = this.reactDiv(chat.chat_id,chat.alias,chat.date_submitted,isMe);
 				chatDiv.appendChild(reactionContainer);
 				// cross post form
 				const crossPostLink = document.createElement('a');
@@ -884,7 +887,7 @@ class AppState {
 				});
 				var heightFixer = reactionContainer.getElementsByClassName('reaction_height_fixer').item(0)
 				heightFixer.innerHTML = "&nbsp;";
-				heightFixer.append(crossPostLink)
+				if(chat.reply_to_id) heightFixer.append(crossPostLink)
 				heightFixer.appendChild(replyLink);
 				chatDiv.appendChild(replyForm);
 
@@ -1118,7 +1121,7 @@ class AppState {
 				threadContainer.innerHTML = '';
 				threadContainer.classList.remove('thread');
 				threads.forEach(thread => {
-					console.log({thread});
+					const isMe = thread.invoice_id && this.state.my_invoice_ids.indexOf(thread.invoice_id*1) > -1;
 					const threadDiv = document.createElement('div');
 					threadDiv.classList.add('thread');
 					if(thread.invoice_id && this.state.my_invoice_ids.indexOf(thread.invoice_id*1) > -1){
@@ -1169,7 +1172,7 @@ class AppState {
 					threadDiv.appendChild(loadThreadLink);
 
 					// Likes and dislikes
-					var reactionContainer = this.reactDiv(thread.chat_id, thread.alias, thread.chat_date_submitted);
+					var reactionContainer = this.reactDiv(thread.chat_id, thread.alias, thread.chat_date_submitted,isMe);
 					threadDiv.appendChild(reactionContainer);
 
 					// Comment Count
