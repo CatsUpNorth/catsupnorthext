@@ -12,16 +12,16 @@ body {
 }
 
 .tab, .tab.inactive {
-  font-size:16px;
+  font-size:14px;
   border-radius: 5px 5px 0 0;
   flex: 1;
-  padding: 4px;
+  padding: 3px;
   text-align: center;
   cursor: pointer;
   background-color: rgb(188, 172, 129);
   color: rgb(59, 73, 71);
   margin-top: 4px;
-  height: 18px;
+  height: 16px;
   border-right: 1px solid rgb(130, 119, 89);
 }
 
@@ -29,7 +29,7 @@ body {
   background-color: rgb(255, 244, 213);
   color: rgb(1, 64, 54);
   font-weight: bold;
-  height: 22px;
+  height: 20px;
   margin-top: 0px;
 }
 
@@ -125,32 +125,42 @@ a:hover {
   border: 1px solid rgba(1, 64, 54,0.5);
   opacity:0.9;
 }
+.chat {
+  max-width:70% !important;
+}
 .thread {
   font-size:14px;
   background-color: rgba(219, 210, 185, 1);
   margin-left: 0;
-  box-shadow: rgba(0, 0, 0, 0.19) 0px 10px 18px, rgba(0, 0, 0, 0.23) 0px 6px 6px;
 }
 .chat, .replied_to_clone {
   margin-left:0;
   font-size:11px;
   background-color: rgb(204, 230, 211);
-  max-width:70% !important;
-  box-shadow: rgba(0, 0, 0, 0.19) 0px 10px 20px, rgba(0, 0, 0, 0.23) 0px 6px 6px;
 }
 .my_thread {
   background-color: rgb(224, 198, 172);
 }
 .my_chat {
   background-color: rgb(230, 198, 166);
-  margin-left:20% !important;
+  margin-left:20%;
   margin-right: 0;
 }
 .replied_to_clone {
-  border:1px solid rgb(120, 120, 120);
+  width: auto !important;
   filter: grayscale(50%);
-  margin-left: 2px;
-  margin-right: 8px;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  color:black !important;
+  border-radius: 2px !important;
+  background-color: rgba(255,255,255,0.5) !important;
+}
+.replied_to_clone:before {
+  border-radius: 5px !important;
+  opacity:0.8;
+}
+.replied_to_clone span, .replied_to_clone strong,  .replied_to_clone .superchat_amount {
+  color:black !important;
 }
 .thread_opener {
   text-decoration: none;
@@ -161,26 +171,34 @@ a:hover {
 }
 .reply_form {
   margin-top:5px;
+  margin-bottom:5px;
+  padding-top: 4px;
+  padding-bottom: 4px;
   border:1px solid rgb(1, 64, 54);
   border-radius:3px;
   padding:3px;
+  height:auto !important;
+  background-color: rgba(255,255,255,0.2) !important;
 }
-.reply_form input[type="text"] {
+.reply_form input[type="text"], .reply_form input[type="number"] {
+  margin-top:0;
+  margin-bottom:0;
+  padding-top:3px;
+  padding-bottom:3px;
   display: inline-block;
-  width: 100% !important;
-  border: none !important;
+  margin-left: 5px;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid rgb(1, 64, 54) !important;
+  border-radius:0;
   outline: none !important;
-  background-color: rgba(255,255,255,0.4) !important;
+  background-color: rgba(0,0,0,0) !important;
   color: rgb(1, 64, 54) !important;
+  width: 90%;
 }
-.reply_form input[type="text"]:hover, .reply_form input[type="number"] {
-  background-color: rgba(255,255,255,0.4) !important;
-}
-.reply_form input[type="number"] {
-  width: 40% !important;
-  border: none !important;
-  outline: none !important;
-  height:40px;
+.reply_form input[type="number"]{
+  width: 70%;
 }
 .reply_form button{
   display: inline-block;
@@ -227,7 +245,7 @@ a:hover {
   opacity: 1;
 }
 .my_reaction {
-  color: rgb(1, 64, 54) !important;
+  color: blue !important;
   opacity: 1 !important;
 }
 .reaction_container, .chat_info_span {
@@ -264,10 +282,10 @@ a:hover {
   background: rgba(155, 126, 40,0.1);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgb(219, 204, 160);
+  background: rgba(1, 64, 54,0.5);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(222, 175, 35);
+  background: rgba(1, 64, 54,0.9);
 }
 #server_link, #conversion_rate{
   color: rgb(188, 172, 129);
@@ -304,9 +322,15 @@ a:hover {
     #002cf1 50%,       /* Soft blue */
     #024c8d 75%,       /* Light cyan-blue */
     #023951 100%       /* Very light teal */
-  );
+  ) !important;
   background-size: 200% 100%;  /* Make the background larger */
-  animation: glimmer 2s ease-in-out infinite;  /* Apply animation */
+  animation: glimmer 5s ease-in-out infinite;  /* Apply animation */
+  border: 4px solid transparent;
+  border-radius: 9px;
+  background-clip: padding-box, border-box;
+  background-origin: padding-box, border-box;
+  box-shadow: 0 0 5px rgba(255, 217, 1, 0.4) !important; /* Optional gold glow */
+  position:relative;
 }
 .my_chat.superchat {
   color:white;
@@ -317,14 +341,38 @@ a:hover {
     #bf0902 50%,       /* Lighter coral */
     #c24400 75%,       /* Soft orange */
     #9a4f00 100%       /* Pale orange */
-  );
+  ) !important;
   background-size: 200% 100%;  /* Make the background larger */
-  animation: glimmer 2s ease-in-out infinite;  /* Apply animation */
+  animation: glimmer 5s ease-in-out infinite;  /* Apply animation */
+}
+.superchat:before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  z-index: -1;
+  background-image: linear-gradient(140deg,
+    #7b6800 0%,       /* Metallic gold */
+    #ffda24 25%,      /* Light gold */
+    #be9e01 50%,      /* Metallic gold */
+    #ffe669 75%,      /* Light gold */
+    #836f00 100%      /* Metallic gold */
+  );
+  background-size: 200% 100%;
+  animation: glimmer 5s ease-in-out infinite;  /* Same glimmer effect */
+  border-radius: 9px;
 }
 .superchat a, .superchat.reaction_link_span a , .superchat.reaction_link_span a.my_reaction {
   color:white !important;
   text-decoration: none;
+  font-weight: bold;
   cursor:pointer;
+}
+.superchat a.my_reaction {
+  color:black !important;
+  font-weight: bold;
 }
 @keyframes glimmer {
   0% {
@@ -337,15 +385,42 @@ a:hover {
     background-position: 0% 0%;
   }
 }
-.superchat_amount{
-  display:inline-block;
-  width:100%;
+.superchat_amount {
+  display: inline-block;
+  width: 100%;
   text-align: center;
-  font-size:12px;
-  font-weight:900;
-  color:rgb(255, 242, 0);
-  border-bottom: 1px solid rgb(1, 64, 54);
-  text-shadow: #FC0%201px%200%2010px;
+  font-size: 12px;
+  font-weight: 900;
+  background-image: linear-gradient(140deg,
+    #FFD700 0%,       /* Metallic gold */
+    #FFEC8B 25%,      /* Light gold */
+    #FFD700 50%,      /* Metallic gold */
+    #FFEC8B 75%,      /* Light gold */
+    #FFD700 100%      /* Metallic gold */
+  );
+  color: rgba(255, 215, 0, 0.8);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;  /* Hide the original text color */
+  animation: glimmer-gold 3s ease-in-out infinite;  /* Apply glimmer animation */
+  border-bottom: 1px solid rgba(255, 215, 0, 0.8);
+  text-shadow: 0px 1px 4px rgba(180, 145, 0, 0.8); /* Optional glowing shadow */
+}
+.superchat_amount svg {
+  color:rgba(255, 215, 0, 1);
+}
+
+@keyframes glimmer-gold {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 0%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
 }
 .chat hr {
   margin-top: 2px;
@@ -373,4 +448,54 @@ a:hover {
 }
 #frozen_thread_container{
   margin-top:4px;
+}
+#cross_post_clone_container {
+  filter: scale(0.8);
+}
+#cancel_cross_post{
+  color: red;
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  border-radius: 5px;
+  font-style: italic;
+}
+.cross_post_clone, .cross_post{
+  background-image: none !important;
+  background-color: rgb(210,210,210);
+  border:1px solid red !important;
+  color:red !important;
+  padding: 5px;
+  margin-bottom: 12px;
+  border-radius:5px;
+  opacity:0.9;
+  box-shadow: none !important;
+}
+.cross_post:before, .cross_post_clone:before {
+  background-color: none !important;
+  background-image: none !important;
+}
+.cross_post_clone strong, .cross_post_clone span, .cross_post strong, .cross_post span, .cross_post_clone .superchat_amount, .cross_post .superchat_amount{
+  color:rgb(210,0,0) !important;
+  text-shadow: none !important;
+  font-style: italic !important;
+}
+.cross_post_clone .superchat_amount svg, .cross_post .superchat_amount svg{
+  color:rgb(210,0,0) !important;
+}
+.cross_post_clone .superchat_amount, .cross_post .superchat_amount{
+  border-bottom: 1px solid rgb(210,0,0) !important;
+  text-shadow: none !important;
+  font-style: italic !important;
+}
+.cros_post_container {
+  align-items: center !important;
+  font-style: italic !important;
+  color: rgb(210,0,0) !important;
+}
+.cros_post_clone_container {
+  align-items: center !important;
+  font-style: italic !important;
+  color: rgb(210,0,0) !important;
 }

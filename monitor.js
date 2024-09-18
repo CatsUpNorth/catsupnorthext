@@ -78,6 +78,7 @@ class AppState {
 			// If the allow refresh flag is set to false, don't refresh
 			if(!this.allow_refresh) return;
 			// refresh the chats
+			this.skipFeed = true; // background polling should not update the feed
 			this.getThreads(this.state.current_user_url);
 		}, this.getSettings().thread_refresh_rate);
 		this.chat_interval = setInterval(() => {
@@ -92,6 +93,7 @@ class AppState {
 			// If the allow refresh flag is set to false, don't refresh
 			if(!this.allow_refresh) return;
 			// refresh the chats
+			this.skipFeed = true; // background polling should not update the feed
 			this.loadThread(this.getCurrentThreadID());
 		}, this.getSettings().chat_refresh_rate);
 		this.rate_interval = setInterval(() => {
@@ -388,9 +390,10 @@ class AppState {
 		});
 	}
 	
-	reactDiv(chat_id, chat_alias = null){
-		const alias_str = (chat_alias && typeof chat_alias == 'string')? `${chat_alias}<br>`: '';
-		const info_str 	= `<br><span class="chat_info_span">${alias_str}#${chat_id}</span>`;
+	reactDiv(chat_id, chat_alias = null, timestamp = null){
+		var alias_str = (chat_alias && typeof chat_alias == 'string')? `${chat_alias}`: '';
+		if(timestamp && typeof timestamp == 'string' && timestamp.length > 0) alias_str += `&nbsp;<span style="opacity:0.4;" class="pull-right">${timestamp}</span>`;
+		const info_str 	= `<br><span class="chat_info_span">${alias_str}<br>#${chat_id}</span>`;
 		const container = document.createElement('span');
 		container.innerHTML = info_str;
 		const heightFixer = document.createElement('span');
@@ -408,7 +411,7 @@ class AppState {
 		likeButton.innerHTML = this.heroicon('hand-thumb-up').outerHTML;
 		likeButton.setAttribute('data-chat-id', chat_id);
 		likeButton.style.paddingRight = '5px';
-		likeButton.style.paddingLeft = '10px';
+		likeButton.style.paddingLeft = '5px';
 		const likeCount = document.createElement('span');
 		likeCount.classList.add('reaction_count');
 		likeCount.classList.add('like_count');
@@ -421,7 +424,7 @@ class AppState {
 		dislikeButton.innerHTML = this.heroicon('hand-thumb-down').outerHTML;
 		dislikeButton.setAttribute('data-chat-id', chat_id);
 		dislikeButton.style.paddingRight = '5px';
-		dislikeButton.style.paddingLeft = '10px';
+		dislikeButton.style.paddingLeft = '5px';
 		const dislikeCount = document.createElement('span');
 		dislikeCount.classList.add('reaction_count');
 		dislikeCount.classList.add('dislike_count');
@@ -662,17 +665,52 @@ class AppState {
 				chatContent.textContent = decodeHTMLEntities(chat.chat_content.toString());
 				chatDiv.appendChild(chatContent);
 				// Likes and dislikes
-				const reactionContainer = this.reactDiv(chat.chat_id,chat.alias);
+				const reactionContainer = this.reactDiv(chat.chat_id,chat.alias,chat.date_submitted);
 				chatDiv.appendChild(reactionContainer);
-
+				// cross post form
+				const crossPostLink = document.createElement('a');
+				crossPostLink.style.paddingLeft = '5px';
+				crossPostLink.style.paddingRight = '5px';
+				crossPostLink.href = '#';
+				crossPostLink.classList.add('cross_post_link');
+				crossPostLink.innerHTML  = this.heroicon('arrows-right-left').outerHTML || '';
+				crossPostLink.innerHTML += ' X-Post';
+				crossPostLink.setAttribute('data-chat-id', chat.chat_id);
+				crossPostLink.addEventListener('click', (event) => {
+					event.preventDefault();
+					const chat_id = event.currentTarget.getAttribute('data-chat-id');
+					const targetChatDiv = document.querySelector(`.chat[data-id="${chat_id}"]`);
+					if(!targetChatDiv) return;
+					const crossPostClone = targetChatDiv.cloneNode(true);
+					crossPostClone.classList.add('cross_post_clone');
+					crossPostClone.classList.remove('chat');
+					crossPostClone.classList.remove('my_chat');
+					const repliedTo = crossPostClone.querySelector('.replied_to_clone')
+					const reactLink = crossPostClone.querySelector('.reaction_link_span');
+					const replyForm = crossPostClone.querySelector('.reply_form');
+					const xPostLink = crossPostClone.querySelector('.cross_post_link');
+					if(repliedTo) repliedTo.remove();
+					if(reactLink) reactLink.remove();
+					if(replyForm) replyForm.remove();
+					if(xPostLink) xPostLink.remove();
+					const crossPostContainer = document.getElementById('cross_post_container');
+					const crossPostCloneContainer = document.getElementById('cross_post_clone_container');
+					if(!crossPostContainer || !crossPostCloneContainer) return;
+					crossPostCloneContainer.innerHTML = `Cross Post Chat #${chat_id}`;
+					crossPostCloneContainer.appendChild(crossPostClone);
+					crossPostContainer.style.display = 'block';
+				});
 				// Reply Form and link to toggle reply form
 				const replyLink = document.createElement('a');
+				replyLink.style.paddingLeft = '5px';
+				replyLink.style.paddingRight = '5px';
 				replyLink.classList.add('chat_reply_link');
 				replyLink.appendChild(this.heroicon('chat-bubble-bottom-center-text'));
 				replyLink.appendChild(document.createTextNode(' Reply'));
 				replyLink.href = '#';
 				replyLink.addEventListener('click', (event) => {
 					event.preventDefault();
+					document.getElementById('cancel_cross_post').click(); // User obviously doesn't want to cross post anymore
 					const form = chatDiv.querySelector('.reply_form');
 					form.style.display = form.style.display === 'none'? 'block': 'none';
 					// focus on the first text input
@@ -695,11 +733,11 @@ class AppState {
 					<input type="hidden" name="reply_to" value="${chat.chat_id}">
 					<input type="text" data-chat-id="${chat.chat_id}" name="content" id="reply_text_input_${chat.chat_id}" class="chat_input" placeholder="Reply to chat, CTRL + Enter to send ₿">
 					<div class="reply_form_super_chat_input_container hidden" id="spend_on_chat_${chat.chat_id}_container">
-						${fiatSymbol}&nbsp;<input type="number" step="0.01" placeholder="Super Chat Spend in ${fiatCode}" class="superchat_input" id="dollars_on_chat_${chat.chat_id}">
+						&nbsp;&nbsp;${fiatSymbol}&nbsp;<input type="number" step="0.01" placeholder="Superchat in ${fiatCode}" class="superchat_input" id="dollars_on_chat_${chat.chat_id}" style="margin-top:6px;">
 						<input type="hidden" name="spend" value="0" id="spend_on_chat_${chat.chat_id}" class="superchat_satoshi mini">
-						<br><span id="satoshi_str_on_chat_${chat.chat_id}"></span>
+						<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span id="satoshi_str_on_chat_${chat.chat_id}"></span>
 					</div>
-					<br>&nbsp;<input type="submit" name="reply" value="" id="reply_text_submit_${chat.chat_id}" style="opacity:0;width:2px;height:2px;">`;
+					<br>&nbsp;<input type="submit" name="reply" value="" id="reply_text_submit_${chat.chat_id}" style="opacity:0;width:6px;height:6px;max-height:6px;margin-bottom:0;">`;
 
 				// Create send links
 				const replyLinkSpan = document.createElement('span');
@@ -710,6 +748,7 @@ class AppState {
 				sendReplyLink.classList.add('send_reply_btn');
 				sendReplyLink.title = 'Send message!';
 				sendReplyLink.innerHTML = sendSVG;
+				sendReplyLink.style.marginTop = '5px';
 				sendReplyLink.setAttribute('data-chat-id', chat.chat_id);
 				sendReplyLink.addEventListener('click', (event) => {
 					event.preventDefault();
@@ -729,7 +768,7 @@ class AppState {
 				sendMoneyLink.classList.add('send_money_btn');
 				sendMoneyLink.title = 'Add Bitcoin to make this a super chat!';
 				sendMoneyLink.style.fontSize = '18px';
-				sendMoneyLink.innerHTML = '₿';
+				sendMoneyLink.innerHTML = `${fiatSymbol}|₿`;
 				sendMoneyLink.setAttribute('data-chat-id', chat.chat_id);
 				sendMoneyLink.addEventListener('click', (event) => {
 					event.preventDefault();
@@ -761,6 +800,10 @@ class AppState {
 					}else{ // Zero out the input and hide the container and focus on the text input
 						superChatContainer.classList.add('hidden');
 						document.getElementById(`reply_text_input_${chat_id}`).focus();
+						const satoshiInput = document.getElementById(`spend_on_chat_${chat_id}`);
+						const satoshiStr = document.getElementById(`satoshi_str_on_chat_${chat_id}`);
+						satoshiInput.value = 0;
+						satoshiStr.textContent = '...';
 					}					
 				});
 				replyLinkSpan.appendChild(sendReplyLink);
@@ -769,7 +812,6 @@ class AppState {
 				replyForm.appendChild(replyLinkSpan);
 
 				replyForm.addEventListener('submit', (event) => {
-
 					event.preventDefault();
 					const formData = new FormData(event.target);
 					const formObject = {is_private: (event.submitter.name === 'private_reply' ? 1 : 0)};
@@ -791,12 +833,55 @@ class AppState {
 					if(formParentDiv.classList.contains('chat')){
 						formParentDiv.querySelector('.chat_reply_link').click();
 					}
+					
+					// Check if there is a .cross_post_clone div
+					const crossPostClone = document.querySelector('.cross_post_clone');
+					if(crossPostClone){
+						// Check if the crossPostClone has a chat ID that is in this thread.
+						const crossPostChatId = crossPostClone.getAttribute('data-id');
+						const crossPostChat = document.querySelector(`.chat[data-id="${crossPostChatId}"]`);
+						if(crossPostChat){
+							// block the cross post (it's already in the thread)
+							this.feed('Cross post blocked. Chat already in thread.', true);
+							// blink the cross post
+							crossPostClone.style.backgroundColor = 'rgb(255,100,100)';
+							setTimeout(() => {
+								crossPostClone.style.backgroundColor = 'white';
+							}, 1000);
+							return;
+						}else{
+							formObject.reply_to = crossPostChatId;
+						}
+					}
+
 					this.sendChat(formObject.captcha_id, formObject.content, formObject.reply_to, threadId, formObject.spend);
 				});
 				var heightFixer = reactionContainer.getElementsByClassName('reaction_height_fixer').item(0)
 				heightFixer.innerHTML = "&nbsp;";
+				heightFixer.append(crossPostLink)
 				heightFixer.appendChild(replyLink);
 				chatDiv.appendChild(replyForm);
+
+				// check if cross post
+				if(chat.thread_id != threadId){
+					chatDiv.classList.add('cross_post');
+					const crossPostURL = document.createElement('a');
+					crossPostURL.href = chat.url;
+					crossPostURL.textContent = chat.url.length < 30? chat.url: chat.url.substring(0,30) + '...';
+					crossPostURL.title = chat.url;
+					crossPostURL.style.color = 'blue';
+					crossPostURL.style.fontSize = '10px';
+					// prepend crossPostURL to chatDiv
+					chatDiv.insertBefore(document.createElement('br'), chatDiv.firstChild);
+					chatDiv.insertBefore(crossPostURL, chatDiv.firstChild);
+					// Add a thread id span
+					const threadIdSpan = document.createElement('span');
+					threadIdSpan.textContent = `X-Post from thread ${chat.thread_id}`;
+					threadIdSpan.style.fontSize = '9px';
+					threadIdSpan.style.opacity = '0.5';
+					chatDiv.insertBefore(document.createElement('br'), chatDiv.firstChild);
+					chatDiv.insertBefore(threadIdSpan, chatDiv.firstChild);
+				}
 
 				threadContainer.appendChild(chatDiv);
 				setTimeout(load_invoice_selectors,50);
@@ -823,12 +908,12 @@ class AppState {
 				replyToClone.style.fontSize = '10px';
 
 				// lock in the font color
-				replyToClone.querySelectorAll('span').forEach((span) => {
-					span.style.color = replyToClone.classList.contains('superchat')? 'white': 'black';
-				});
-				replyToClone.querySelectorAll('strong').forEach((strong) => {
-					strong.style.color = replyToClone.classList.contains('superchat')? 'white': 'black';
-				});
+				// replyToClone.querySelectorAll('span').forEach((span) => {
+				// 	span.style.color = replyToClone.classList.contains('superchat')? 'white': 'black';
+				// });
+				// replyToClone.querySelectorAll('strong').forEach((strong) => {
+				// 	strong.style.color = replyToClone.classList.contains('superchat')? 'white': 'black';
+				// });
 
 				// remove .reaction_link_span div from the clone
 				const reactionLinkSpan = replyToClone.querySelector('.reaction_link_span');
@@ -845,7 +930,6 @@ class AppState {
 				// chat_info_span
 				const chatInfoSpan = replyToClone.querySelector('.chat_info_span');
 				if(chatInfoSpan) chatInfoSpan.style.fontSize = '7px';
-
 				// remove .reply_form div from the clone
 				const replyForm = replyToClone.querySelector('.reply_form');
 				if(replyForm) replyForm.remove();
@@ -859,9 +943,7 @@ class AppState {
 					const threadParentChatId = threadParentChat.getAttribute('data-id');
 					// hide reply link
 					const replyLink = threadParentChat.querySelector('.chat_reply_link');
-					if(replyLink){
-						replyLink.innerHTML = "&nbsp;";
-					}
+					if(replyLink) replyLink.innerHTML = "&nbsp;";
 					// show the form
 					const replyForm = threadParentChat.querySelector('.reply_form[data-chat-id="' + threadParentChatId + '"]');
 					if(replyForm){ // Remove the reply form from the first .thread and add it to the end of the threadContainer
@@ -994,6 +1076,7 @@ class AppState {
 				threadContainer.innerHTML = '';
 				threadContainer.classList.remove('thread');
 				threads.forEach(thread => {
+					console.log({thread});
 					const threadDiv = document.createElement('div');
 					threadDiv.classList.add('thread');
 					if(thread.invoice_id && this.state.my_invoice_ids.indexOf(thread.invoice_id*1) > -1){
@@ -1044,7 +1127,7 @@ class AppState {
 					threadDiv.appendChild(loadThreadLink);
 
 					// Likes and dislikes
-					var reactionContainer = this.reactDiv(thread.chat_id,data.reactions)
+					var reactionContainer = this.reactDiv(thread.chat_id, thread.alias, thread.chat_date_submitted);
 					threadDiv.appendChild(reactionContainer);
 
 					// Comment Count
@@ -1916,5 +1999,10 @@ document.addEventListener('DOMContentLoaded', () => {
 			event.preventDefault();
 			sendMoneyLink.click();
 		}
+	});
+	document.getElementById('cancel_cross_post').addEventListener('click', (event) => {
+		event.preventDefault();
+		document.getElementById('cross_post_container').style.display = 'none';
+		document.getElementById('cross_post_clone_container').innerHTML = '';
 	});
 });
