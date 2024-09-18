@@ -56,6 +56,17 @@ body {
   color: rgb(255, 244, 213) !important;
 }
 
+#feed.error{
+  background-color: rgb(255, 255, 255);
+  color:red !important;
+  font-weight:600;
+  border: 2px dashed red;
+  border-radius:5px;
+  padding:6px;
+  font-style:italic;
+  font-size: 12px;
+}
+
 form label {
   display: block;
   margin-bottom: 5px;
@@ -181,6 +192,7 @@ a:hover {
   background-color: rgba(255,255,255,0.2) !important;
 }
 .reply_form input[type="text"], .reply_form input[type="number"] {
+  font-size:11px;
   margin-top:0;
   margin-bottom:0;
   padding-top:3px;
@@ -329,7 +341,7 @@ a:hover {
   border-radius: 9px;
   background-clip: padding-box, border-box;
   background-origin: padding-box, border-box;
-  box-shadow: 0 0 5px rgba(255, 217, 1, 0.4) !important; /* Optional gold glow */
+  box-shadow: 0 0 5px rgba(255, 217, 1, 0.4); /* Optional gold glow */
   position:relative;
 }
 .my_chat.superchat {
@@ -365,7 +377,7 @@ a:hover {
   border-radius: 9px;
 }
 .superchat a, .superchat.reaction_link_span a , .superchat.reaction_link_span a.my_reaction {
-  color:white !important;
+  color:white;
   text-decoration: none;
   font-weight: bold;
   cursor:pointer;
@@ -498,4 +510,8 @@ a:hover {
   align-items: center !important;
   font-style: italic !important;
   color: rgb(210,0,0) !important;
+}
+.cross_post_ext_link{
+  color:red !important;
+  text-decoration: underline;
 }

@@ -368,10 +368,6 @@ class AppState {
 			if(currentThreadId){
 				this.skipFeed = true;
 				this.loadThread(currentThreadId,this.getCachedPass(currentThreadId));
-				if(this.transactionCaptcha){
-					this.skipFeed = true;
-					this.redeemInvoice(this.transactionCaptcha);
-				}
 			}else if(create_thread_form.style.display !== 'none'){
 				document.getElementById('create_thread_toggle_link').click();
 				document.getElementById('thread_content_input').value = '';
@@ -392,7 +388,6 @@ class AppState {
 	
 	reactDiv(chat_id, chat_alias = null, timestamp = null){
 		var alias_str = (chat_alias && typeof chat_alias == 'string')? `${chat_alias}`: '';
-		if(timestamp && typeof timestamp == 'string' && timestamp.length > 0) alias_str += `&nbsp;<span style="opacity:0.4;" class="pull-right">${timestamp}</span>`;
 		const info_str 	= `<br><span class="chat_info_span">${alias_str}<br>#${chat_id}</span>`;
 		const container = document.createElement('span');
 		container.innerHTML = info_str;
@@ -437,6 +432,22 @@ class AppState {
 		linkSpan.appendChild(dislikeButton);
 		container.appendChild(linkSpan);
 		container.appendChild(document.createElement('br'));
+		var date_str = '';
+		if(timestamp && typeof timestamp == 'string' && timestamp.length > 0){
+			// Attempt to parse the timestamp and reformat as date + timezone
+			try{
+				const dateObj = new Date(timestamp);
+				date_str = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString();
+			}catch(e){
+				date_str = timestamp.split(" ");
+				date_str = date_str.length > 5? date_str[0] + ' ' + date_str[1] + ' ' + date_str[2] + ' ' + date_str[3] + ' ' + date_str[5]: date_str.join(" ");
+			}
+		}
+		const dateSpan = document.createElement('span');
+		dateSpan.innerHTML = date_str;
+		dateSpan.style.opacity = '0.4';
+		container.appendChild(document.createElement('br'));
+		container.appendChild(dateSpan);
 		return container;
 	}
 
@@ -674,7 +685,8 @@ class AppState {
 				crossPostLink.href = '#';
 				crossPostLink.classList.add('cross_post_link');
 				crossPostLink.innerHTML  = this.heroicon('arrows-right-left').outerHTML || '';
-				crossPostLink.innerHTML += ' X-Post';
+				crossPostLink.innerHTML += ' XP';
+				crossPostLink.title = 'Cross-Post this chat into another thread.';
 				crossPostLink.setAttribute('data-chat-id', chat.chat_id);
 				crossPostLink.addEventListener('click', (event) => {
 					event.preventDefault();
@@ -865,11 +877,13 @@ class AppState {
 				// check if cross post
 				if(chat.thread_id != threadId){
 					chatDiv.classList.add('cross_post');
+					chatDiv.classList.remove('my_chat');
+					chatDiv.classList.remove('superchat');
 					const crossPostURL = document.createElement('a');
 					crossPostURL.href = chat.url;
 					crossPostURL.textContent = chat.url.length < 30? chat.url: chat.url.substring(0,30) + '...';
 					crossPostURL.title = chat.url;
-					crossPostURL.style.color = 'blue';
+					crossPostURL.classList.add('cross_post_ext_link');
 					crossPostURL.style.fontSize = '10px';
 					// prepend crossPostURL to chatDiv
 					chatDiv.insertBefore(document.createElement('br'), chatDiv.firstChild);
@@ -962,6 +976,7 @@ class AppState {
 					threadParentChat.remove();
 					frozenThreadContainer.appendChild(threadParentChat);
 				}
+
 				document.querySelectorAll('.back_to_threads_link').forEach((link) => { link.remove(); });
 				const backLink = document.createElement('a');
 				backLink.textContent = '‹ Go back to threads';
@@ -988,6 +1003,14 @@ class AppState {
 			if(startMode || !this.skipAutoScroll){
 				this.scrolldown();
 			}
+
+			// remove cross_posts from main body of chat
+			const crossPosts = threadContainer.querySelectorAll('.cross_post');
+			crossPosts.forEach((crossPost) => {
+				if(!crossPost) return;
+				if(crossPost.classList.contains('replied_to_clone')) return;
+				crossPost.remove();
+			});
 		})
 		.catch(error => {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
@@ -995,6 +1018,11 @@ class AppState {
 		})
 		.finally(() => {
 			this.currentAJAXCall = false;
+			// show user the change in balance
+			if(this.transactionCaptcha){
+				this.skipFeed = true;
+				this.redeemInvoice(this.transactionCaptcha);
+			}
 		});
 		setTimeout(this.updateTCHeight,20);
 	}
@@ -1239,11 +1267,14 @@ class AppState {
 			this.skipFeed = false;
 			return;
 		}
-		if(err) console.trace(arg,err);
 		const f 		= document.getElementById('feed');
+		if(err){
+			f.classList.add('error');
+		}else{
+			f.classList.remove('error');
+		}
 		if(!f) return;
 		f.innerHTML 	= arg.toString() || "&nbsp;";
-		f.style.color 	= err? "rgb(255,110,110)": "rgb(1,64,54)";
 		const version 	= document.createElement('span');
 		version.style.fontSize = '9px';
 		version.style.opacity = '0.6';
