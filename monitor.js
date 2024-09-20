@@ -22,7 +22,9 @@ class AppState {
 		this.skipFeed 			= false; // skip feed message if true only once (set back to false just before feed method exits early)
 		this.skipLoadThreads 	= false; // skip loading threads if true only once (set back to false just before loadThreads method exits early)
 		this.skipAutoScroll 	= false; // skip autoscroll if user is scrolling up in the chat.
+		this.currentCaptcha 	= null;
 		this.transactionCaptcha	= null; // set to captchaId when user initiates a super chat or a verfied username purchase.
+		this.followSearch		= null;
 		this.newMessages 		= 0;
 		this.conversionRates 	= [];
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
@@ -44,6 +46,8 @@ class AppState {
 			if (Object.keys(this.state.settings).length < Object.keys(this.settingsDefault).length) {
 				this.state.settings = JSON.parse(JSON.stringify(this.settingsDefault));
 			}
+
+			if(!this.currentCaptcha) this.currentCaptcha = Object.keys(this.state.invoices)[0] || null;
 
 			this.rebuildSettingsForm();
 			this.rebuildInvoiceList();
@@ -311,6 +315,7 @@ class AppState {
 
 	// send chat or create threda (reply_to is zero)
 	sendChat(captcha_id, content, reply_to = 0, thread_id = 0, spend = 0, password = null, css = null){
+		this.currentCaptcha = captcha_id;
 		document.querySelectorAll('.superchat_input').forEach(   (input) => { input.value = ''; } );
 		document.querySelectorAll('.superchat_satoshi').forEach( (input) => { input.value = 0;  } );
 		const settings 		= this.getSettings();
@@ -386,6 +391,87 @@ class AppState {
 			document.getElementById('cancel_cross_post').click();
 		});
 	}
+
+	isFollowing(alias){
+		try{
+			const invoice = this.state.invoices[this.currentCaptcha];
+			if(!invoice || !('follows' in invoice) || !Array.isArray(invoice.follows)) return false;
+			return invoice.follows.indexOf(alias) > -1;
+		}catch(e){
+			return false;
+		}
+		return false;
+	}
+
+	updateFollowList(captchaId = null){
+		this.followSearch = captchaId;
+		const formData = new FormData();
+		formData.append('captcha_id', captchaId);
+		formData.append('secret', this.getInvoiceSecret(captchaId));
+		const settings = this.getSettings();
+		const getFollowsEndpoint = `${settings.server_url}/get_my_follows`;
+		this.currentAJAXCall = true;
+		fetch(getFollowsEndpoint, {
+			method: 'POST',
+			body: formData
+		})
+		.then(response => {
+			this.currentAJAXCall = false;
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
+			}
+		})
+		.then(json => {
+			this.currentAJAXCall = false;
+			const data = typeof json == 'string'? JSON.parse(json): json;
+			const invoice = this.followSearch in this.state.invoices? this.state.invoices[this.followSearch]: null;
+			if(invoice) invoice.follows = data?.follows || [];
+			this.rebuildFollowList();
+		})
+		.catch(error => {
+			this.currentAJAXCall = false;
+			this.feed('There has been a problem with your fetch operation. See console.', true);
+			console.error(error);
+		})
+		.finally(() => {
+			this.currentAJAXCall = false;
+		});
+	}
+
+	rebuildFollowList(){
+		const followContainer 		= document.getElementById('follow_container');
+		const serverURL 			= this.getSettings()?.server_url || null;
+		if(!followContainer || !serverURL) return;
+		followContainer.innerHTML 	= '';
+		for(let captchaId in this.state.invoices){
+			const invoice = this.state.invoices[captchaId];
+			const followHeader = document.createElement('h6');
+			var captchaName = captchaId.substring(0, 8) + '...';
+			if('alias' in invoice && invoice.alias && typeof invoice.alias == 'string' && invoice.alias.length > 0) captchaName = invoice.alias;
+			followHeader.textContent = `Follows for ${captchaName}`;
+			followContainer.appendChild(followHeader);
+			if(!invoice || !('follows' in invoice) || !Array.isArray(invoice.follows)){
+				const noFollows = document.createElement('p');
+				noFollows.textContent = 'No follows found.';
+				followContainer.appendChild(noFollows);
+				continue;
+			}
+			const followList = document.createElement('ul');
+			followList.classList.add('follow_list');
+			invoice.follows.forEach((follow) => {
+				const followItem = document.createElement('li');
+				const followLink = document.createElement('a');
+				followLink.href = `${serverURL}/${follow}`;
+				followLink.textContent = follow;
+				followItem.classList.add('follow_item');
+				followItem.appendChild(followLink);
+				followList.appendChild(followItem);
+			});
+			followContainer.appendChild(followList);
+		}
+	}
 	
 	reactDiv(chat_id, chat_alias = null, timestamp = null, is_me = false){
 		var alias_str = (chat_alias && typeof chat_alias == 'string')? `${chat_alias}`: '';
@@ -404,18 +490,78 @@ class AppState {
 				date_str = date_str.length > 5? date_str[0] + ' ' + date_str[1] + ' ' + date_str[2] + ' ' + date_str[3] + ' ' + date_str[5]: date_str.join(" ");
 			}
 		}
-		const info_str 	= `&nbsp;${alias_str}<br>${date_str}`;
-		const chatInfo = document.createElement('span');
-		chatInfo.innerHTML = info_str;
-		chatInfo.classList.add('chat_info');
-		container.appendChild(document.createElement('br'));
-		if(!is_me && alias_str.startsWith('$')){
-			const followLink = document.createElement('a');
-			followLink.href = '#';
-			followLink.innerHTML = this.heroicon('user-plus').outerHTML + '&nbsp;Follow';
-			followLink.title = `Follow user ${alias_str}`;
-			container.appendChild(followLink);
+		container.append(document.createElement('br'));
+		if(is_me){
+			const meSpan = document.createElement('span');
+			meSpan.innerHTML = 'Me&nbsp;-';
+			meSpan.style.fontWeight = 'bold';
+			container.appendChild(meSpan);
+		}else{
+			if(alias_str.startsWith('$')){
+				const followLink 		= document.createElement('a');
+				const iFollow 			= this.isFollowing(alias_str);
+				const followVerb 		= iFollow? 'Unfollow': 'Follow';
+				followLink.href 		= '#';
+				followLink.innerHTML	= this.heroicon('user-plus').outerHTML + '&nbsp;' + followVerb;
+				followLink.title 		= `${followVerb} user ${alias_str}`;
+				followLink.setAttribute('data-alias', alias_str);
+				followLink.setAttribute('data-unfollow', (iFollow? 'yes': 'no'));
+				followLink.addEventListener('click', (event) => {
+					event.preventDefault();
+					const targ		= event.currentTarget;
+					const formData 	= new FormData();
+					formData.append('verified_username_follow', targ.getAttribute('data-alias'));
+					formData.append('unfollow', targ.getAttribute('data-unfollow'));
+					formData.append('captcha_id', this.currentCaptcha);
+					formData.append('secret', this.getInvoiceSecret(this.currentCaptcha));
+					const settings = this.getSettings();
+					const followEndpoint = `${settings.server_url}/follow`;
+					this.currentAJAXCall = true;
+					fetch(followEndpoint, {
+						method: 'POST',
+						body: formData
+					})
+					.then(response => {
+						this.currentAJAXCall = false;
+						if (response.ok) {
+							return response.text();
+						} else {
+							throw new Error('Network response was not ok');
+						}
+					})
+					.then(json => {
+						this.currentAJAXCall = false;
+						const data = typeof json == 'string'? JSON.parse(json): json;
+						if(!data || typeof data != 'object'){
+							this.feed('Follow operation failed.', true);
+							return;
+						}
+						if (data.error) {
+							this.feed(`Error: ${data.error}`, true);
+						} else {
+							this.feed(data.msg);
+							this.updateFollowList(this.currentCaptcha);
+						}
+					})
+					.catch(error => {
+						this.feed('There has been a problem with your fetch operation. See console.', true);
+						console.error(error);
+					})
+					.finally(() => {
+						this.currentAJAXCall = false;
+					});
+				});
+				container.appendChild(followLink);
+			}else{
+				const anonSpan = document.createElement('span');
+				anonSpan.innerHTML = 'Anon&nbsp;-';
+				anonSpan.style.fontWeight = 'bold';
+				container.appendChild(anonSpan);
+			}
 		}
+		const chatInfo = document.createElement('span');
+		chatInfo.innerHTML = `&nbsp;${alias_str}<br>${date_str}`;
+		chatInfo.classList.add('chat_info');
 		container.appendChild(chatInfo);
 		const heightFixer = document.createElement('span');
 		heightFixer.classList.add('reaction_height_fixer');
@@ -466,8 +612,22 @@ class AppState {
 		return container;
 	}
 
+	getInvoiceSecret(captcha_id){
+		if(!captcha_id || !this.state.invoices || !this.state.invoices[captcha_id] || !this.state.invoices[captcha_id].secret) return null;
+		return this.state.invoices[captcha_id].secret;
+	}
+
 	updateReactions(reactions){
 		if(!reactions || !Array.isArray(reactions)) return;
+		const frozenContainer = document.getElementById('frozen_container');
+		if(frozenContainer){
+			const frozenReactionCounts = frozenContainer.querySelectorAll('.reaction_count');
+			if(frozenReactionCounts){
+				frozenReactionCounts.forEach((count) => {
+					count.textContent = '0';
+				});
+			}
+		}
 
 		// Get invoice_ids for invoices that have secrets
 		if(this.state.my_invoice_ids.length <= 0){ // User cannot react without a secret
@@ -544,14 +704,8 @@ class AppState {
 				const reaction = event.currentTarget.classList.contains('like_button')? 'up': 'down';
 				formData.append('chat_id', chatId);
 				formData.append('vote', reaction);
-				for(var name in app.state.invoices){
-					if(!name || name.length < 1) continue;
-					var inv = app.state.invoices[name];
-					if(!inv || !inv.secret || typeof inv.secret !== 'string' || inv.secret.length < 1) continue;
-					if(!inv.repo || typeof inv.repo !== 'string' || inv.repo.length < 1) continue;
-					formData.append('captcha_id', name);
-					formData.append('secret', inv.secret);
-				}
+				formData.append('captcha_id', this.currentCaptcha);
+				formData.append('secret', this.getInvoiceSecret(this.currentCaptcha));
 				this.currentAJAXCall = true;
 				fetch(reactEndpoint, {
 					method: 'POST',
@@ -618,13 +772,11 @@ class AppState {
 		if(latestDateSubmitted){
 			formData.append('date_submitted_after', latestDateSubmitted);
 		}
-		this.currentAJAXCall = true;
 		fetch(threadEndpoint, {
 			method: 'POST',
 			body: formData
 		})
 		.then(response => {
-			this.currentAJAXCall = false;
 			if (response.ok) {
 				return response.text();
 			} else {
@@ -632,7 +784,6 @@ class AppState {
 			}
 		})
 		.then(json => {
-			this.currentAJAXCall = false;
 			document.getElementById('scroll_to_bottom_container').style.display = 'block';
 			const data = typeof json == 'string'? JSON.parse(json): json;
 			if(!data || typeof data != 'object'){
@@ -1034,7 +1185,6 @@ class AppState {
 			console.error(error);
 		})
 		.finally(() => {
-			this.currentAJAXCall = false;
 			// show user the change in balance
 			if(this.transactionCaptcha){
 				this.skipFeed = true;
@@ -1075,7 +1225,6 @@ class AppState {
 		// send this to the get_threads endpoint
 		const settings = this.getSettings();
 		const getThreadsURL = `${settings.server_url}/get_threads?url=${encodeURIComponent(url)}`;
-		this.currentAJAXCall = true;
 		fetch(getThreadsURL)
 			.then(response => {
 				if (response.ok) {
@@ -1085,7 +1234,6 @@ class AppState {
 				}
 			})
 			.then(json => {
-				this.currentAJAXCall = false;
 				const data = typeof json == 'string'? JSON.parse(json): json;
 				if(!data || typeof data != 'object'){
 					this.feed('Server response parse failed.', true);
@@ -1193,9 +1341,6 @@ class AppState {
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
 				console.trace(error);
-			})
-			.finally(() => {
-				this.currentAJAXCall = false;
 			});
 			setTimeout(this.updateTCHeight,20);
 	}
@@ -1575,6 +1720,7 @@ class AppState {
 			server_invoices++;
 
 			const invoice = JSON.parse(JSON.stringify(this.state.invoices[name]));
+			console.log(invoice);
 			// Create a div for each invoice
 			const invoiceDiv = document.createElement('div');
 			invoiceDiv.setAttribute("data-captcha-id",name);
@@ -1805,6 +1951,7 @@ class AppState {
 				this.feed(`Error: ${data.error.toString()}`, true);
 			}if(data.msg){
 				this.feed(data.msg);
+				this.state.invoices[captchaId].alias 			= data.alias 			|| null;
 				this.state.invoices[captchaId].rows_remaining 	= data.rows_remaining 	|| 0;
 				this.state.invoices[captchaId].satoshi_paid 	= data.satoshi_paid 	|| 0;
 				this.state.invoices[captchaId].btc_paid 		= data.btc_paid			|| 0;
@@ -1921,10 +2068,14 @@ function load_invoice_selectors(){
 			var balance = (invoice.balance && !isNaN(invoice.balance))? invoice.balance: 0;
 			if(balance <= 0) continue;
 			if(invoice.server_url !== app.getSettings().server_url) continue; // skip invoices for other servers
-			var cur_bal = app.satoshiToFiatStr(balance);
-			const option = document.createElement('option');
-			option.value = captchaId;
-			option.textContent = `${String(balance).padStart(8,"0")}  |  ${cur_bal}  |  ${captchaId.substring(0, 5)}...`;
+			var cur_bal 	= app.satoshiToFiatStr(balance);
+			const option 	= document.createElement('option');
+			const current 	= captchaId === app.currentCaptcha? true: false;
+			if(current) option.selected = true;
+			option.value 	= captchaId;
+			var captchaName = captchaId.substring(0, 8) + '...';
+			if(invoice.alias) captchaName = invoice.alias.toString();
+			option.textContent = `${String(balance).padStart(8,"0")}  |  ${cur_bal}  |  ${captchaName}...`;
 			invoiceSelector.appendChild(option);
 		}
 	}
@@ -1934,6 +2085,10 @@ document.addEventListener('DOMContentLoaded', () => {
 	document.getElementById('tab-home').addEventListener('click', 		() => show_tab('home'));
 	document.getElementById('tab-buy').addEventListener('click', 		() => show_tab('buy'));
 	document.getElementById('tab-settings').addEventListener('click', 	() => show_tab('settings'));
+	document.getElementById('tab-follows').addEventListener('click', 	() => {
+		app.rebuildFollowList();
+		show_tab('follows');
+	});
 	document.getElementById('buy_form').addEventListener('submit', 		(event) => {
 		event.preventDefault();
 		app.buyKeys(document.getElementById('buy_val').value, document.getElementById('buy_curr').value);
@@ -1999,7 +2154,6 @@ document.addEventListener('DOMContentLoaded', () => {
 		const rollup_form = document.getElementById('rollup_invoice_form');
 		if(rollup_form.style.display === 'none'){
 			rollup_form.style.display = 'block';
-			const invoice_checkboxes = document.getElementsByClassName('invoice_selector');
 		}else{
 			rollup_form.style.display = 'none';
 		}
