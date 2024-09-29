@@ -2111,6 +2111,7 @@ class AppState {
 			verifyLink.prepend(verifyIcon);
 			verifyLink.addEventListener('click', (e) => {
 				e.preventDefault();
+				const captchaId = e.currentTarget.getAttribute('data-captcha-id');
 				document.querySelectorAll('.invoice_verification_form').forEach((form) => form.remove());
 				document.querySelectorAll('.invoice_verification_cancel_link').forEach((link) => link.remove());
 				const cancelVerificationLink = document.createElement('a');
@@ -2129,7 +2130,7 @@ class AppState {
 				});
 				const verificationForm = document.createElement('form');
 				verificationForm.classList.add('invoice_verification_form');
-				verificationForm.setAttribute("data-captcha-id",name);
+				verificationForm.setAttribute("data-captcha-id",captchaId);
 				verificationForm.innerHTML = `
 					<br>
 					<strong style="font-size:20px;">Get a Username!</strong>
