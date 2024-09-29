@@ -77,11 +77,12 @@ form input,
 form select,
 form textarea {
   width: 100%;
-  padding: 10px;
-  margin-bottom: 10px;
+  padding: 4px;
+  margin-bottom: 7px;
   border: 1px solid rgb(1, 64, 54);
   border-radius: 5px;
   box-sizing: border-box;
+  font-size: 12px;
 }
 
 form button[type="submit"] {
@@ -107,9 +108,18 @@ form button[type="submit"]:hover {
   background-color: rgba(255,255,255,0.5);
 }
 
+.invoice form{
+  background-color: white !important;
+  display:block;
+  margin:7px;
+  padding:5px;
+  border: 1px solid rgb(1, 64, 54);
+  border-radius:5px;
+}
+
 .invoice a{
 	text-decoration:none;
-  font-size:16px;
+  font-size:12px;
 	cursor:pointer;
 	color:blue;
 }
@@ -328,40 +338,24 @@ a:hover {
   opacity:1;
 }
 .superchat {
-  color:white;
   opacity:1;
-  font-size: 14px;
-  background-image: linear-gradient(140deg, 
-    #2e07f1 0%,        /* Light green-blue */
-    #1d05bc 25%,       /* Light blue-green */
-    #002cf1 50%,       /* Soft blue */
-    #024c8d 75%,       /* Light cyan-blue */
-    #023951 100%       /* Very light teal */
-  ) !important;
-  background-size: 200% 100%;  /* Make the background larger */
-  animation: glimmer 5s ease-in-out infinite;  /* Apply animation */
-  border: 4px solid transparent;
-  border-radius: 9px;
+  border-top: 1px solid rgba(255,255,255,0.4);
+  border-left: 1px solid rgba(255,255,255,0.2);
+  border-right: 1px solid rgba(0,0,0,0.2);
+  border-bottom: 1px solid rgba(0,0,0,0.4);
   background-clip: padding-box, border-box;
   background-origin: padding-box, border-box;
   box-shadow: 0 0 5px rgba(255, 217, 1, 0.4); /* Optional gold glow */
   position:relative;
-}
-.my_chat.superchat {
-  color:white;
-  opacity:1;
-  background-image: linear-gradient(140deg, 
-    #c20124 0%,        /* Soft orange-red */
-    #870218 25%,       /* Light tomato */
-    #bf0902 50%,       /* Lighter coral */
-    #c24400 75%,       /* Soft orange */
-    #9a4f00 100%       /* Pale orange */
-  ) !important;
-  background-size: 200% 100%;  /* Make the background larger */
-  animation: glimmer 5s ease-in-out infinite;  /* Apply animation */
+  background-color: rgba(255,255,255,0.1);
+  border-radius:4px !important;
 }
 .superchat:before {
   content: '';
+  border-top: 1px solid rgba(255,255,255,1);
+  border-left: 1px solid rgba(255,255,255,0.2);
+  border-right: 1px solid rgba(0,0,0,0.2);
+  border-bottom: 1px solid rgba(0,0,0,0.4);
   position: absolute;
   top: -4px;
   left: -4px;
@@ -377,17 +371,7 @@ a:hover {
   );
   background-size: 200% 100%;
   animation: glimmer 5s ease-in-out infinite;  /* Same glimmer effect */
-  border-radius: 9px;
-}
-.superchat a, .superchat.reaction_link_span a , .superchat.reaction_link_span a.my_reaction {
-  color:white;
-  text-decoration: none;
-  font-weight: bold;
-  cursor:pointer;
-}
-.superchat a.my_reaction {
-  color:black !important;
-  font-weight: bold;
+  border-radius:4px !important;
 }
 @keyframes glimmer {
   0% {
@@ -406,24 +390,9 @@ a:hover {
   text-align: center;
   font-size: 12px;
   font-weight: 900;
-  background-image: linear-gradient(140deg,
-    #FFD700 0%,       /* Metallic gold */
-    #FFEC8B 25%,      /* Light gold */
-    #FFD700 50%,      /* Metallic gold */
-    #FFEC8B 75%,      /* Light gold */
-    #FFD700 100%      /* Metallic gold */
-  );
-  color: rgba(255, 215, 0, 0.8);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;  /* Hide the original text color */
-  animation: glimmer-gold 3s ease-in-out infinite;  /* Apply glimmer animation */
-  border-bottom: 1px solid rgba(255, 215, 0, 0.8);
-  text-shadow: 0px 1px 4px rgba(180, 145, 0, 0.8); /* Optional glowing shadow */
-}
-.superchat_amount svg {
-  color:rgba(255, 215, 0, 1);
+  color: rgb(1, 64, 54) !important;
+  border-bottom: 2px solid rgb(1, 64, 54);
+  margin-bottom: 7px;
 }
 
 @keyframes glimmer-gold {
@@ -517,4 +486,25 @@ a:hover {
 .cross_post_ext_link{
   color:red !important;
   text-decoration: underline;
+}
+.free_chat_captcha_form{
+  margin: 10px;
+  padding: 10px;
+  border: 1px dashed red;
+  background-color: rgb(255,100,100);
+  color:red;
+  border-radius: 4px;
+}
+.free_chat_captcha_form img{
+  border-radius:3px;
+}
+.free_chat_captcha_form input{
+  background-color: white;
+  border: 1px solid red;
+  color:red;
+}
+.free_chat, .free_thread {
+  filter: invert(80%);
+  opacity: 0.7;
+  border: 1px dashed red;
 }

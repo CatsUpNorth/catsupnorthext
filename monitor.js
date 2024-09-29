@@ -2,34 +2,45 @@
 class AppState {
 	constructor() {
 		this.version			= '0.0.1';
-		this.allow_refresh 		= true; // Allow the refresh of the threads and chats as long as the user is not filling out a form.
-		this.thread_interval 	= null;
-		this.chat_interval 		= null;
-		this.rate_interval 		= null;
-		this.currentAJAXCall 	= false;
+		this.paused 			= false;
 		this.state				= {};
 		this.settingsSchema 	= {};
 		this.passCache			= {}; // Password attempts by thread id
+		this.contentCacheFC		= null; // Used to save the last chat sent for when users are doing a free chat.
+		this.replyToCacheFC		= null; // Used to save the last chat sent for when users are doing a free chat.
+		this.threadIdCacheFC	= null; // Used to save the last chat sent for when users are doing a free chat.
+		this.newPassCacheFC		= null; // Used to save the last chat sent for when users are doing a free chat.
 		this.settingsDefault 	= {
-		    server_url:             "https://catsupnorth.com", // fallback server url
-			thread_refresh_rate: 	60_000,
-			chat_refresh_rate: 		500,
-			autoload_threads: 		false,
-			url_preview_max_len: 	40,
-			min_spend_threshold: 	1,
-			fiat_code: 				'USD',
+		    server_url:            			"https://catsupnorth.com", // fallback server url
+			refresh_threads_microseconds:	60_000, // 1 minute
+			refresh_chat_microseconds:		1000, // 0.5 seconds
+			url_preview_max_len: 			40,
+			min_spend_threshold: 			1,
+			fiat_code: 						'USD',
+			ignore_free_threads: 			false,
+			ignore_free_chats: 				false,
+		};
+		this.settingsLimits 	= {
+			refresh_threads_microseconds: 	[2500, 60000], // 2.5 seconds to 60 seconds
+			refresh_chat_microseconds: 		[550, 5000],  // 0.55 seconds to 5 seconds
 		};
 		this.skipFeed 			= false; // skip feed message if true only once (set back to false just before feed method exits early)
-		this.skipLoadThreads 	= false; // skip loading threads if true only once (set back to false just before loadThreads method exits early)
+		this.skipGetThreads 	= false; // skip loading threads if true only once (set back to false just before loadThreads method exits early)
 		this.skipAutoScroll 	= false; // skip autoscroll if user is scrolling up in the chat.
 		this.currentCaptcha 	= null;
-		this.transactionCaptcha	= null; // set to captchaId when user initiates a super chat or a verfied username purchase.
+		this.transactionCaptcha	= null; // set to captchaId when user initiates a super chat or a verified username purchase.
 		this.followSearch		= null;
 		this.newMessages 		= 0;
 		this.conversionRates 	= [];
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
 		this.settingsSchema.server_url = 'string';
 		this.loadState();
+	}
+
+	pause() {
+		this.paused = this.paused? false: true;
+		const pause_link = document.getElementById('pause');
+		if (pause_link) pause_link.style.opacity = this.paused? '1': '0.5';
 	}
 
 	// Load the state from chrome.storage.local
@@ -69,38 +80,48 @@ class AppState {
 	}
 	
 	startPolling(){
-		if(this.thread_interval) 	clearInterval(this.thread_interval);
-		if(this.chat_interval) 		clearInterval(this.chat_interval);
-		if(this.rate_interval) 		clearInterval(this.rate_interval);
-		this.thread_interval = setInterval(() => {
-			// If there is a current AJAX call running, don't refresh
-			if(this.currentAJAXCall) return;
-			// If the server url is not set, don't refresh
-			if(!this.state.current_user_url) return;
+		try{
+			clearInterval(window.thread_interval);
+			clearInterval(window.chat_interval);
+			clearInterval(window.rate_interval);
+			window.thread_interval = null;
+			window.chat_interval = null;
+			window.rate_interval = null;
+		}catch(e){
+			console.error('Error starting polling:', e);
+		}
+		const thread_container = document.getElementById('thread_container');
+		if(!thread_container.classList.contains('thread')){
+			this.getThreads();
+		}
+		var hardThreadInterval 	= this.getSetting('refresh_threads_microseconds');
+			hardThreadInterval 	= (typeof hardThreadInterval != 'number' || hardThreadInterval < 6000)? 6000: hardThreadInterval;
+		var hardChatInterval 	= this.getSetting('refresh_chat_microseconds');
+			hardChatInterval 	= (typeof hardChatInterval != 'number' || hardChatInterval < 550)? 550: hardChatInterval;
+		window.thread_interval = setInterval(() => {
+			const thread_container = document.getElementById('thread_container');
+			if(!thread_container) return;
 			// if user is in chat mode, don't get threads
-			if(document.getElementById('thread_container').classList.contains('thread')) return;
-			// If the allow refresh flag is set to false, don't refresh
-			if(!this.allow_refresh) return;
+			if(thread_container.classList.contains('thread')) return;
 			// refresh the chats
 			this.skipFeed = true; // background polling should not update the feed
-			this.getThreads(this.state.current_user_url);
-		}, this.getSettings().thread_refresh_rate);
-		this.chat_interval = setInterval(() => {
-			// If there is a current AJAX call running, don't refresh
-			if(this.currentAJAXCall) return;
+			this.getThreads();
+		}, hardThreadInterval);
+		window.chat_interval = setInterval(() => {
+			const thread_container = document.getElementById('thread_container');
+			if(!thread_container) return;
 			// If the server url is not set, don't refresh
 			if(!this.state.current_user_url) return;
 			// if user is in thread mode, don't get chats
-			if(!document.getElementById('thread_container').classList.contains('thread')) return;
+			if(!thread_container.classList.contains('thread')) return;
 			// user is trying to reply to a chat, don't refresh
-			if(document.getElementsByClassName('chat_reply_form_open').length > 0) return; 
-			// If the allow refresh flag is set to false, don't refresh
-			if(!this.allow_refresh) return;
+			if(document.getElementsByClassName('chat_reply_form_open').length > 0) return;
 			// refresh the chats
 			this.skipFeed = true; // background polling should not update the feed
 			this.loadThread(this.getCurrentThreadID());
-		}, this.getSettings().chat_refresh_rate);
-		this.rate_interval = setInterval(() => {
+		}, hardChatInterval);
+		window.rate_interval = setInterval(() => {
+			if(this.paused) return;
 			this.updateConversionRates();
 		}, 6133); // 6.333 seconds (try to miss the other intervals)
 	}
@@ -126,8 +147,10 @@ class AppState {
 			}
 		});
 
-		document.getElementById('server_link').href 		= this.getSettings().server_url;
-		document.getElementById('server_link').textContent 	= this.getSettings().server_url.replace(/https?:\/\//, '');
+		const server_url = this.getSetting('server_url');
+		if(!server_url || typeof server_url != 'string' || server_url.length < 1) return;
+		document.getElementById('server_link').href 		= server_url + '';
+		document.getElementById('server_link').textContent 	= server_url.replace(/https?:\/\//, '');
 
 		this.startPolling();
 	}
@@ -157,7 +180,7 @@ class AppState {
 			val:			val,
 			curr:			curr,
 			link:			null,
-			server_url:		this.getSettings().server_url.toString()
+			server_url:		this.getSetting('server_url'),
 		};
 		document.getElementById('recovery_phrase').value = '';
 		this.saveState();
@@ -165,9 +188,12 @@ class AppState {
 	}
 	
 	buyKeys(val, curr) {
-		const settings 	= this.getSettings();
-		const buyEndpoint 	= `${settings.server_url}/buy?val=${encodeURIComponent(val)}&cur=${encodeURIComponent(curr)}`;
-		this.currentAJAXCall = true;
+		const server_url = this.getSetting('server_url');
+		if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
+			this.feed('Error: Server URL not set.', true);
+			return;
+		}
+		const buyEndpoint 	= `${server_url}/buy?val=${encodeURIComponent(val)}&cur=${encodeURIComponent(curr)}`;
 		fetch(buyEndpoint)
 			.then(response => {
 				if (response.ok) {
@@ -177,7 +203,6 @@ class AppState {
 				}
 			})
 			.then(json => { //  Expected: { "captcha_id": None, "secret": None, "error": None }
-				this.currentAJAXCall = false;
 				const data = typeof json == 'string'? JSON.parse(json): json;
 				if(!data || typeof data != 'object'){
 					this.feed('Server response parse failed.', true);
@@ -187,7 +212,6 @@ class AppState {
 				const secret			= data.secret			|| null;
 				const error 			= data.error			|| null;
 				const recovery_phrase	= data.recovery_phrase	|| null;
-				const settings 			= this.getSettings();
 				if (error) {
 					this.feed(`Error: ${error}`, true);
 					return;
@@ -208,7 +232,12 @@ class AppState {
 				// Create a form dynamically
 				const form = document.createElement('form');
 				form.method = 'POST';
-				form.action = `${settings.server_url}/request_invoice_creation`;
+				const server_url = this.getSetting('server_url');
+				if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
+					this.feed('Error: Server URL not set.', true);
+					return;
+				}
+				form.action = `${server_url}/request_invoice_creation`;
 				form.target = '_blank';
 
 				// Create an input element for the captcha ID
@@ -227,7 +256,7 @@ class AppState {
 				form.appendChild(input);
 				form.appendChild(secretInput);
 				document.body.appendChild(form);
-				this.skipLoadThreads = true;
+				this.skipGetThreads = true;
 				form.submit();
 				document.body.removeChild(form);
 			})
@@ -235,22 +264,22 @@ class AppState {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
 				console.error(error);
 			})
-			.finally(() => {
-				this.currentAJAXCall = false;
-			});
 	}
 
 	recoverInvoice(form){
-		const settings 			= this.getSettings();
-		const recoverEndpoint 	= `${settings.server_url}/recover_invoice`;
+		const server_url  		= this.getSetting('server_url');
+		if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
+			this.feed('Error: Server URL not set.', true);
+			return;
+		}	
+		const recoverEndpoint 	= `${server_url}/recover_invoice`;
 		const formObj			= new FormData(form);
-		this.currentAJAXCall 	= true;
 		fetch(recoverEndpoint, {
 			method: 'POST',
 			body: formObj
 		})
 		.then(response => {
-			this.currentAJAXCall = false;
+			
 			if (response.ok) {
 				return response.text();
 			} else {
@@ -258,7 +287,7 @@ class AppState {
 			}
 		})
 		.then(json => {
-			this.currentAJAXCall = false;
+			
 			const data = typeof json == 'string'? JSON.parse(json): json;
 			if(!data || typeof data != 'object'){
 				this.feed('Server response parse failed.', true);
@@ -270,24 +299,13 @@ class AppState {
 				this.feed(data.msg);
 				this.addInvoice(data.captcha_id, data.secret, data.face_value, data.face_currency, document.getElementById('recovery_phrase').value);
 				this.saveState();
-				this.rebuildInvoiceList();
-				setTimeout(() => {
-					const redeemLink = document.querySelector(`.invoice_redeem_link[data-captcha-id="${data.captcha_id}"]`);
-					redeemLink.parentElement.style.backgroundColor = 'lightgreen';
-					if (redeemLink) redeemLink.click();
-				},300);
-				const invoiceContainer = document.getElementById('invoice_container');
-				const feedbackAlt = document.createElement('div');
-				feedbackAlt.textContent = data.msg;
-				invoiceContainer.appendChild(feedbackAlt);
+				this.redeemInvoice(data.captcha_id);
+				this.feed(data.msg);
 			}
 		})
 		.catch(error => {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
 			console.error(error);
-		})
-		.finally(() => {
-			this.currentAJAXCall = false;
 		});
 	}
 
@@ -302,34 +320,53 @@ class AppState {
 	}
 
 	rollupInvoices(form){
-		const settings 			= this.getSettings();
-		const recoverEndpoint 	= `${settings.server_url}/recover_invoice`;
+		const server_url  		= this.getSetting('server_url');
+		if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
+			this.feed('Error: Server URL not set.', true);
+			return;
+		}
+		const recoverEndpoint 	= `${server_url}/recover_invoice`;
 		const formObj			= new FormData(form);
 		return null;
 	}
 
 	// Create a thread
 	createThread(captcha_id, description, password, css) {
+		if(this.paused) return;
 		this.sendChat(captcha_id, description, 0, 0, 0, password, css);
 	}
 
 	// send chat or create threda (reply_to is zero)
 	sendChat(captcha_id, content, reply_to = 0, thread_id = 0, spend = 0, password = null, css = null){
-		this.currentCaptcha = captcha_id;
+		if(this.paused) return;
+
+		// Save these just in case the user needs to complete a captcha
+		this.contentCacheFC 	= content.toString() + "";
+		this.replyToCacheFC 	= reply_to*1;
+		this.threadIdCacheFC 	= thread_id*1;
+		this.currentCaptcha 	= captcha_id;
+		this.newPassCacheFC 	= password;
+
 		document.querySelectorAll('.superchat_input').forEach(   (input) => { input.value = ''; } );
 		document.querySelectorAll('.superchat_satoshi').forEach( (input) => { input.value = 0;  } );
-		const settings 		= this.getSettings();
 		const currentURL 	= this.getCurrentURL();
-		const chatEndpoint 	= `${settings.server_url}/send_chat`;
+		const server_url 	= this.getSetting('server_url');
+		if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
+			this.feed('Error: Server URL not set.', true);
+			return;
+		}
+		const chatEndpoint 	= `${server_url}/send_chat`;
 		const formData 		= new FormData();
-		formData.append('captcha_id', captcha_id);
-		formData.append('secret', this.state.invoices[captcha_id].secret);
+		if(captcha_id != 'free'){ // can be null for free chat
+			formData.append('captcha_id', captcha_id);
+			formData.append('secret', this.state.invoices[captcha_id].secret);
+			formData.append('spend', spend);
+			if(spend && !isNaN(spend*1) && spend > 0) this.transactionCaptcha = captcha_id;
+		}
 		formData.append('content', content.toString());
 		formData.append('url', currentURL);
 		formData.append('reply_to', reply_to);
 		formData.append('thread_id', thread_id);
-		formData.append('spend', spend);
-		if(spend && !isNaN(spend*1) && spend > 0) this.transactionCaptcha = captcha_id;
 		formData.append('css', css);
 		if(!reply_to){
 			for(var prop in this.state.current_metadata){ // New thread, send URL metadata for card creation
@@ -343,13 +380,12 @@ class AppState {
 			if(!password && thread_id) password = this.getCachedPass(thread_id);
 			formData.append('password', password);
 		}
-		this.currentAJAXCall = true;
 		fetch(chatEndpoint, {
 			method: 'POST',
 			body: formData
 		})
 		.then(response => {
-			this.currentAJAXCall = false;
+			
 			if (response.ok) {
 				return response.text();
 			} else {
@@ -357,7 +393,7 @@ class AppState {
 			}
 		})
 		.then(json => {
-			this.currentAJAXCall = false;
+			
 			const data = typeof json == 'string'? JSON.parse(json): json;
 			if(!data || typeof data != 'object'){
 				this.feed('Server response parse failed.', true);
@@ -366,8 +402,103 @@ class AppState {
 			if (data.error) {
 				this.feed(`Error: ${data.error}`, true);
 			} else {
-				this.feed('Message sent.');
+				const msg = data?.msg || 'Message sent.';
+				this.feed(msg);
 			}
+			
+			// If the user is sending a free chat, they must complete a captcha.
+			// Free chats are sent to another endpoint that validates the captcha.
+			if("image_data" in data && data.image_data){
+				const tmpCaptcha 	= data?.captcha_id || null;
+				const tmpMsg 		= data?.msg || 'Please complete the captcha to send your message.';
+				this.feed(tmpMsg);
+				// Create a form at the bottom of the home tab
+				const captchaForm = document.createElement('form');
+				captchaForm.classList.add('free_chat_captcha_form');
+				const captchaIdHidden = document.createElement('input');
+				captchaIdHidden.type = 'hidden';
+				captchaIdHidden.name = 'captcha_id';
+				captchaIdHidden.value = tmpCaptcha;
+				const captchaImg = document.createElement('img');
+				captchaImg.src = data.image_data.startsWith("data:image/png;base64,")? data.image_data: `data:image/png;base64,${data.image_data}`;
+				const captchaInput = document.createElement('input');
+				captchaInput.type = 'text';
+				captchaInput.name = 'human_guess';
+				captchaInput.placeholder = 'Enter the captcha';
+				const captchaSubmit = document.createElement('input');
+				captchaSubmit.type = 'submit';
+				captchaSubmit.value = 'Submit';
+				captchaForm.appendChild(captchaIdHidden);
+				captchaForm.appendChild(captchaImg);
+				captchaForm.appendChild(document.createElement('br'));
+				captchaForm.appendChild(document.createElement('br'));
+				captchaForm.appendChild(captchaInput);
+				captchaForm.appendChild(captchaSubmit);
+				captchaForm.addEventListener('submit', (event) => {
+					event.preventDefault();
+					const formData = new FormData(event.currentTarget);
+
+					// Saved for captcha use
+					formData.append('content', this.contentCacheFC);
+					formData.append('reply_to', this.replyToCacheFC);
+					formData.append('thread_id', this.threadIdCacheFC);
+					formData.append('password', this.newPassCacheFC);
+					
+					formData.append('url', this.getCurrentURL());
+
+					for(var prop in this.state.current_metadata){ // New thread, send URL metadata for card creation
+						if(!prop || prop.length < 1) continue;
+						formData.append(`metadata_${prop}`, this.state.current_metadata[prop] || '');
+					}
+					this.contentCacheFC = null;
+					this.replyToCacheFC = null;
+					this.threadIdCacheFC = null;
+					this.newPassCacheFC = null;
+					const server_url = this.getSetting('server_url');
+					if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
+						this.feed('Error: Server URL not set.', true);
+						return;
+					}
+					const freeChatEndpoint = `${server_url}/send_chat_free`;
+					// delete free_chat_captcha_form
+					document.querySelectorAll('.free_chat_captcha_form').forEach((form) => { form.remove(); });
+					fetch(freeChatEndpoint, {
+						method: 'POST',
+						body: formData
+					})
+					.then(response => {
+						
+						if (response.ok) {
+							return response.text();
+						} else {
+							throw new Error('Network response was not ok');
+						}
+					})
+					.then(json => {
+						
+						const data = typeof json == 'string'? JSON.parse(json): json;
+						if(!data || typeof data != 'object'){
+							this.feed('Server response parse failed.', true);
+							return;
+						}
+						if (data.error) {
+							this.feed(`Error: ${data.error}`, true);
+						} else {
+							const msg = data?.msg || 'Message sent.';
+							this.feed(msg);
+							this.startPolling();
+						}
+					})
+					.catch(error => {
+						this.feed('There has been a problem with your fetch operation. See console.', true);
+						console.error(error);
+					});
+				});
+				document.getElementById('home').appendChild(captchaForm);
+				captchaInput.focus();
+			}
+
+
 			const create_thread_form = document.getElementById('create_thread_form');
 			var currentThreadId = this.getCurrentThreadID();
 			if(currentThreadId){
@@ -385,10 +516,6 @@ class AppState {
 		.catch(error => {
 			this.feed('There has been a problem with your post operation. See console.', true);
 			console.error(error);
-		})
-		.finally(() => {
-			this.currentAJAXCall = false;
-			document.getElementById('cancel_cross_post').click();
 		});
 	}
 
@@ -404,19 +531,23 @@ class AppState {
 	}
 
 	updateFollowList(captchaId = null){
+		if(this.paused) return;
 		this.followSearch = captchaId;
 		const formData = new FormData();
 		formData.append('captcha_id', captchaId);
 		formData.append('secret', this.getInvoiceSecret(captchaId));
-		const settings = this.getSettings();
-		const getFollowsEndpoint = `${settings.server_url}/get_my_follows`;
-		this.currentAJAXCall = true;
+		const server_url = this.getSetting('server_url');
+		if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
+			this.feed('Error: Server URL not set.', true);
+			return;
+		}
+		const getFollowsEndpoint = `${server_url}/get_my_follows`;
 		fetch(getFollowsEndpoint, {
 			method: 'POST',
 			body: formData
 		})
 		.then(response => {
-			this.currentAJAXCall = false;
+			
 			if (response.ok) {
 				return response.text();
 			} else {
@@ -424,25 +555,22 @@ class AppState {
 			}
 		})
 		.then(json => {
-			this.currentAJAXCall = false;
+			
 			const data = typeof json == 'string'? JSON.parse(json): json;
 			const invoice = this.followSearch in this.state.invoices? this.state.invoices[this.followSearch]: null;
 			if(invoice) invoice.follows = data?.follows || [];
 			this.rebuildFollowList();
 		})
 		.catch(error => {
-			this.currentAJAXCall = false;
+			
 			this.feed('There has been a problem with your fetch operation. See console.', true);
 			console.error(error);
-		})
-		.finally(() => {
-			this.currentAJAXCall = false;
 		});
 	}
 
 	rebuildFollowList(){
 		const followContainer 		= document.getElementById('follow_container');
-		const serverURL 			= this.getSettings()?.server_url || null;
+		const serverURL 			= this.getSetting('server_url');
 		if(!followContainer || !serverURL) return;
 		followContainer.innerHTML 	= '';
 		for(let captchaId in this.state.invoices){
@@ -508,21 +636,25 @@ class AppState {
 				followLink.setAttribute('data-unfollow', (iFollow? 'yes': 'no'));
 				followLink.addEventListener('click', (event) => {
 					event.preventDefault();
+					if(this.paused) return;
 					const targ		= event.currentTarget;
 					const formData 	= new FormData();
 					formData.append('verified_username_follow', targ.getAttribute('data-alias'));
 					formData.append('unfollow', targ.getAttribute('data-unfollow'));
 					formData.append('captcha_id', this.currentCaptcha);
 					formData.append('secret', this.getInvoiceSecret(this.currentCaptcha));
-					const settings = this.getSettings();
-					const followEndpoint = `${settings.server_url}/follow`;
-					this.currentAJAXCall = true;
+					const server_url = this.getSetting('server_url');
+					if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
+						this.feed('Error: Server URL not set.', true);
+						return;
+					}
+					const followEndpoint = `${server_url}/follow`;
 					fetch(followEndpoint, {
 						method: 'POST',
 						body: formData
 					})
 					.then(response => {
-						this.currentAJAXCall = false;
+						
 						if (response.ok) {
 							return response.text();
 						} else {
@@ -530,7 +662,7 @@ class AppState {
 						}
 					})
 					.then(json => {
-						this.currentAJAXCall = false;
+						
 						const data = typeof json == 'string'? JSON.parse(json): json;
 						if(!data || typeof data != 'object'){
 							this.feed('Follow operation failed.', true);
@@ -546,9 +678,6 @@ class AppState {
 					.catch(error => {
 						this.feed('There has been a problem with your fetch operation. See console.', true);
 						console.error(error);
-					})
-					.finally(() => {
-						this.currentAJAXCall = false;
 					});
 				});
 				container.appendChild(followLink);
@@ -613,8 +742,7 @@ class AppState {
 	}
 
 	getInvoiceSecret(captcha_id){
-		if(!captcha_id || !this.state.invoices || !this.state.invoices[captcha_id] || !this.state.invoices[captcha_id].secret) return null;
-		return this.state.invoices[captcha_id].secret;
+		return (this.state.invoices?.[captcha_id] || {})?.secret || null;
 	}
 
 	updateReactions(reactions){
@@ -679,6 +807,7 @@ class AppState {
 
 			clonedButton.addEventListener('click', (event) => {
 				event.preventDefault();
+				if(this.paused) return;
 				if(event.currentTarget.classList.contains('my_reaction')) return; // user already reacted
 				event.currentTarget.classList.add('my_reaction');
 				const counter = event.currentTarget.querySelector('.reaction_count');
@@ -697,8 +826,12 @@ class AppState {
 						siblingCounter.textContent = (siblingCounter.textContent*1 - 1).toString();
 					}
 				}
-				const settings = this.getSettings();
-				const reactEndpoint = `${settings.server_url}/chat_react`;
+				const server_url = this.getSetting('server_url');
+				if (!server_url) {
+					this.feed('Server URL not set.', true);
+					return;
+				}
+				const reactEndpoint = `${server_url}/chat_react`;
 				const formData = new FormData();
 				const chatId = event.currentTarget.getAttribute('data-chat-id');
 				const reaction = event.currentTarget.classList.contains('like_button')? 'up': 'down';
@@ -706,13 +839,12 @@ class AppState {
 				formData.append('vote', reaction);
 				formData.append('captcha_id', this.currentCaptcha);
 				formData.append('secret', this.getInvoiceSecret(this.currentCaptcha));
-				this.currentAJAXCall = true;
 				fetch(reactEndpoint, {
 					method: 'POST',
 					body: formData
 				})
 				.then(response => {
-					this.currentAJAXCall = false;
+					
 					if (response.ok) {
 						return response.text();
 					} else {
@@ -720,7 +852,7 @@ class AppState {
 					}
 				})
 				.then(json => {
-					this.currentAJAXCall = false;
+					
 					const data = typeof json == 'string'? JSON.parse(json): json;
 					if(!data || typeof data != 'object'){
 						this.feed('Server response parse failed.', true);
@@ -735,28 +867,30 @@ class AppState {
 				.catch(error => {
 					this.feed('There has been a problem with your fetch operation. See console.', true);
 					console.error(error);
-				})
-				.finally(() => {
-					this.currentAJAXCall = false;
 				});
 			});
 		});
 	}
 
 	loadThread(threadId, password = null){
+		if(this.paused) return;
 		const startMode = document.querySelectorAll('.chat').length > 0? false: true;
 		threadId = threadId || this.getCurrentThreadID();
 		document.getElementById('create_thread_container').style.display = 'none';
 		document.getElementById('back_to_threads_bracket').style.display = 'inline-block';
 		// TODO Change to post to allow for password and css
-		const settings = this.getSettings();
 		const threadContainer = document.getElementById('thread_container');
 		const frozenThreadContainer = document.getElementById('frozen_thread_container');
 		// change to post
 		const formData = new FormData();
 		formData.append('thread_id', threadId);
 		if (password) formData.append('password', password);
-		const threadEndpoint = `${settings.server_url}/get_thread_chats`;
+		const server_url = this.getSetting('server_url');
+		if (!server_url) {
+			this.feed('Server URL not set.', true);
+			return;
+		}
+		const threadEndpoint = `${server_url}/get_thread_chats`;
 
 		var latestDateSubmitted = null;
 		if(startMode){
@@ -771,6 +905,10 @@ class AppState {
 		}
 		if(latestDateSubmitted){
 			formData.append('date_submitted_after', latestDateSubmitted);
+		}
+		if(this.currentCaptcha){
+			formData.append('captcha_id', this.currentCaptcha);
+			formData.append('secret', this.getInvoiceSecret(this.currentCaptcha));
 		}
 		fetch(threadEndpoint, {
 			method: 'POST',
@@ -797,9 +935,9 @@ class AppState {
 			this.feed(data.msg);
 			const threadChats = data.chats;
 			threadContainer.classList.add('thread');
-			threadChats.forEach((chat) => {
-
-				const isMe = chat.invoice_id && this.state.my_invoice_ids.indexOf(chat.invoice_id*1) > -1;
+			threadChats.forEach( chat => {
+				const isMe = chat?.is_me || false;
+				const isFree = chat?.is_free || false;
 
 				// Do not add chats that are already in the thread
 				var selector = `.chat[data-id="${chat.chat_id}"]`;
@@ -813,6 +951,7 @@ class AppState {
 				if(this.skipAutoScroll) this.newMessages++;
 
 				const chatDiv = document.createElement('div');
+				if(isFree) chatDiv.classList.add('free_chat');
 				chatDiv.setAttribute('data-id', `${chat.chat_id}`);
 				chatDiv.setAttribute('data-reply-to-id', `${chat.reply_to_id}`);
 				chatDiv.setAttribute('data-date-submitted', `${chat.date_submitted}`);
@@ -905,7 +1044,7 @@ class AppState {
 				sendSVG = sendSVG? sendSVG.outerHTML: 'Send';
 				var hideSVG = this.heroicon('eye-slash');
 				hideSVG = hideSVG? hideSVG.outerHTML: 'PM';
-				const fiatCode = this.getSettings().fiat_code;
+				const fiatCode = this.getSetting('fiat_code');
 				const fiatSymbol = this.fiatCodeToSymbol(fiatCode);
 				replyForm.innerHTML = `
 					<input type="hidden" name="thread_id" value="${threadId}">
@@ -917,7 +1056,7 @@ class AppState {
 						<input type="hidden" name="spend" value="0" id="spend_on_chat_${chat.chat_id}" class="superchat_satoshi mini">
 						<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span id="satoshi_str_on_chat_${chat.chat_id}"></span>
 					</div>
-					<br>&nbsp;<input type="submit" name="reply" value="" id="reply_text_submit_${chat.chat_id}" style="opacity:0;width:6px;height:6px;max-height:6px;margin-bottom:0;">`;
+					<br>&nbsp;<input type="submit" name="reply" value="" id="reply_text_submit_${chat.chat_id}" style="opacity:0;width:6px;height:28px;max-height:28px;margin-bottom:0;">`;
 
 				// Create send links
 				const replyLinkSpan = document.createElement('span');
@@ -946,6 +1085,8 @@ class AppState {
 				sendMoneyLink.href = '#';
 				sendMoneyLink.classList.add('chat_reply_btn');
 				sendMoneyLink.classList.add('send_money_btn');
+				// don't allow line breaks in sendMoneyLink
+				sendMoneyLink.style.whiteSpace = 'nowrap';
 				sendMoneyLink.title = 'Add Bitcoin to make this a super chat!';
 				sendMoneyLink.style.fontSize = '18px';
 				sendMoneyLink.innerHTML = `${fiatSymbol}|₿`;
@@ -1203,29 +1344,41 @@ class AppState {
 		return 0;
 	}
 
-	getThreads(url_arg, metadata){
+	getThreads(url_arg = null, metadata = null){
+		if(this.paused) return;
 		document.getElementById('scroll_to_bottom_container').style.display = 'none';
 		document.getElementById('frozen_thread_container').innerHTML = '';
 		document.getElementById('thread_container').classList.remove('thread');
 		if(document.getElementById('cur_thread_id_container')) document.getElementById('cur_thread_id_container').remove();
 		if(document.getElementById('thread_label')) document.getElementById('thread_label').remove();
-		this.updateCurrentMetadata(metadata);
-		if(this.skipLoadThreads){
-			this.skipLoadThreads = false;
+		if(url_arg) this.updateCurrentUserURL(url_arg);
+		if(metadata) this.updateCurrentMetadata(metadata);
+		if(this.skipGetThreads){
+			this.skipGetThreads = false;
 			return;
 		}
 		document.getElementById('create_thread_container').style.display = 'inline-block';
 		document.getElementById('back_to_threads_bracket').style.display = 'none';
-		if(url_arg) this.updateCurrentUserURL(url_arg);
 		const url = this.getCurrentURL();
 		if(!url){
 			this.feed("No URL to fetch threads for.", true);
 			return;
 		}
 		// send this to the get_threads endpoint
-		const settings = this.getSettings();
-		const getThreadsURL = `${settings.server_url}/get_threads?url=${encodeURIComponent(url)}`;
-		fetch(getThreadsURL)
+		const server_url = this.getSetting('server_url');
+		if(!server_url){
+			this.feed("No server URL set.", true);
+			return;
+		}
+		const getThreadsURL = `${server_url}/get_threads`;
+		const formData = new FormData();
+		formData.append('captcha_id', this.currentCaptcha);
+		formData.append('secret', this.getInvoiceSecret(this.currentCaptcha));
+		formData.append('url', url);
+		fetch(getThreadsURL, {
+				method: 'POST',
+				body: formData
+			})
 			.then(response => {
 				if (response.ok) {
 					return response.text();
@@ -1268,9 +1421,12 @@ class AppState {
 
 				threadContainer.innerHTML = '';
 				threadContainer.classList.remove('thread');
-				threads.forEach(thread => {
-					const isMe = thread.invoice_id && this.state.my_invoice_ids.indexOf(thread.invoice_id*1) > -1;
+				threads.forEach( thread => {
+					const isMe = thread?.is_me || false;
+					const isFree = thread?.is_free || false;
+
 					const threadDiv = document.createElement('div');
+					if(isFree) threadDiv.classList.add('free_thread');
 					threadDiv.classList.add('thread');
 					if(thread.invoice_id && this.state.my_invoice_ids.indexOf(thread.invoice_id*1) > -1){
 						threadDiv.classList.add('my_thread');
@@ -1286,6 +1442,8 @@ class AppState {
 					loadThreadLink.classList.add('thread_opener');
 					if(thread.password_required) loadThreadLink.classList.add('password_required');
 					loadThreadLink.addEventListener('click', (e) => {
+						e.preventDefault();
+						if(this.paused) return;
 						// Get thread ID from the clicked element
 						var ctarg = e.currentTarget;
 						var threadId = ctarg.getAttribute('data-thread-id');
@@ -1320,15 +1478,26 @@ class AppState {
 					threadDiv.appendChild(loadThreadLink);
 
 					// Likes and dislikes
-					var reactionContainer = this.reactDiv(thread.chat_id, thread.alias, thread.chat_date_submitted,isMe);
+					var reactionContainer = this.reactDiv(thread.chat_id, thread.alias, thread.chat_date_submitted, isMe);
 					threadDiv.appendChild(reactionContainer);
 
 					// Comment Count
 					if(thread.comment_count && !isNaN(thread.comment_count*1) && thread.comment_count > 0){
 						const heightFixer = reactionContainer.getElementsByClassName('reaction_height_fixer').item(0);
-						heightFixer.innerHTML = this.heroicon('chat-bubble-bottom-center-text').outerHTML + '&nbsp;' + thread.comment_count;
-						heightFixer.style.paddingLeft = '5px';
-						heightFixer.style.fontWeight = '600';
+						if (!heightFixer) return;
+						const commentLink = document.createElement('a');
+						commentLink.href = '#';
+						commentLink.innerHTML = this.heroicon('chat-bubble-bottom-center-text').outerHTML + '&nbsp;' + thread.comment_count;
+						commentLink.title = 'View comments';
+						commentLink.addEventListener('click', (e) => {
+							e.preventDefault();
+							const threadDiv 	= e.currentTarget.closest('.thread');
+							if (!threadDiv) return;
+							const threadOpener 	= threadDiv.querySelector('.thread_opener');
+							if (!threadOpener) return;
+							threadOpener.click();
+						});
+						heightFixer.appendChild(commentLink);
 					}
 
 					threadContainer.appendChild(threadDiv);
@@ -1366,7 +1535,14 @@ class AppState {
 				if(typeof newSettings[key] === this.settingsSchema[key]){
 					validSettings[key] = newSettings[key];
 				}else if(this.settingsSchema[key] === 'number' && !isNaN(newSettings[key]*1)){
-					validSettings[key] = newSettings[key]*1;
+					if (key in this.settingsLimits){
+						const settingLimits = this.settingsLimits[key];
+						if (!Array.isArray(settingLimits) || settingLimits.length !== 2) continue;
+						validSettings[key] = newSettings[key] < settingLimits[0]? settingLimits[0]: newSettings[key];
+						validSettings[key] = newSettings[key] > settingLimits[1]? settingLimits[1]: newSettings[key];
+					}else{
+						validSettings[key] = newSettings[key]*1;
+					}
 				}else if(this.settingsSchema[key] === 'boolean' && ["true","false"].indexOf(newSettings[key].toString().toLowerCase()) > -1){
 					validSettings[key] = newSettings[key].toString().toLowerCase() === 'true'? true: false;
 				}else{
@@ -1381,7 +1557,7 @@ class AppState {
 			const invStr = invalidParams.join(', ');
 			this.feed(`Invalid setting or type for parameter(s): ${invStr}`,true);
 		}else{
-			this.state.settings = { ...this.state.settings, ...validSettings };
+			this.state.settings = { ...this.state.settings, ...validSettings }; // merge partial settings with existing settings
 			this.saveState();
 			this.feed("Settings updated.")
 		}
@@ -1396,8 +1572,8 @@ class AppState {
 		return this .state.invoices;
 	}
 
-	getSettings() {
-		return this.state.settings;
+	getSetting(key) {
+		return this.state.settings?.[key] || this.settingsDefault[key] || null;
 	}
 
 	getCurrentURL() {
@@ -1405,18 +1581,26 @@ class AppState {
 	}
 	
 	getShortURL(){
-		const settings 	= this.getSettings();
+		const url_len 	= this.getSetting('url_preview_max_len');
 		const url 		= this.getCurrentURL();
-		var shortUrl 	=  url.substr(0,settings.url_preview_max_len);
-		return url.length > settings.url_preview_max_len? shortUrl + "...": url + "";
+		var shortUrl 	=  url.substr(0,url_len);
+		return url.length > url_len? shortUrl + "...": url + "";
 	}
 
 	// GUI Output
 	updateCurrentUserURL(url, save_state = true) {
+		const last_current_url								= this.getCurrentURL();
 		this.state.current_user_url 						= url.toString();
 		document.getElementById('current_url').title 		= this.getCurrentURL();
 		document.getElementById('current_url').innerHTML 	= this.getShortURL();
 		this.saveState();
+		if (last_current_url !== url.toString()){
+			// Switch the user to threads mode and close the chat form
+			const threadContainer = document.getElementById('thread_container');
+			if(threadContainer && threadContainer.classList.contains('thread')){ // user in chat mode
+				this.getThreads(url);
+			}
+		}
 	}
 
 	updateCurrentMetadata(metadata){
@@ -1446,17 +1630,17 @@ class AppState {
 	}
 
 	updateConversionRates(){
+		if(this.paused) return;
 		
-		const settings = this.getSettings();
-		if(!settings.server_url || typeof settings.server_url != 'string' || !settings.server_url.startsWith('http')) return;
-		const conversionRateURL = `${settings.server_url}/static/btc_rate_current.json`
+		const server_url = this.getSetting('server_url');
+		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')) return;
+		const conversionRateURL = `${server_url}/static/btc_rate_current.json`
 
 		// Get the refresh rate
 		if(!conversionRateURL){
 			this.feed('No conversion rate URL set.', true);
 			return;
 		}
-		this.currentAJAXCall = true;
 		fetch(conversionRateURL)
 			.then(response => {
 				if (response.ok) {
@@ -1466,7 +1650,7 @@ class AppState {
 				}
 			})
 			.then(json => {
-				this.currentAJAXCall = false;
+				
 				const data = typeof json == 'string'? JSON.parse(json): json;
 				if(!data || !Array.isArray(data) || data.length < 1){
 					this.feed('Array min length of 1 expected for conversion rates.', true);
@@ -1483,9 +1667,6 @@ class AppState {
 			})
 			.catch(error => {
 				console.error(error);
-			})
-			.finally(() => {
-				this.currentAJAXCall = false;
 			});
 	}
 
@@ -1499,17 +1680,23 @@ class AppState {
 		return Math.floor(crypto_amount * 100_000_000);
 	}
 
-	fiatToSatoshi(fiat_amount){
+	fiatToSatoshi(fiat_amount, altFiatCode = null){
 		if(isNaN(fiat_amount*1)) return 0;
-		const fiat_code = this.getSettings()?.fiat_code || null;
+		var fiat_code = this.getSetting('fiat_code');
+		if(altFiatCode && typeof altFiatCode == 'string' && altFiatCode.length === 3){
+			fiat_code = altFiatCode;
+		}
 		const rate = this.conversionRates.find(rate => rate.code === fiat_code);
 		if(!rate || !rate.rate || isNaN(rate.rate*1)) return 0;
 		return this.cryptoToSatoshi(fiat_amount / rate.rate);
 	}
 
-	satoshiToFiat(satoshi){
+	satoshiToFiat(satoshi, altFiatCode = null){
 		if(isNaN(satoshi*1) || satoshi % 1 > 0) return 0;
-		const fiat_code = this.getSettings()?.fiat_code || null;
+		var fiat_code = this.getSetting('fiat_code');
+		if(altFiatCode && typeof altFiatCode == 'string' && altFiatCode.length === 3){
+			fiat_code = altFiatCode;
+		}
 		const rate = this.conversionRates.find(rate => rate.code === fiat_code);
 		if(!rate || !rate.rate || isNaN(rate.rate*1)) return 0;
 		const fiat_amount = (satoshi / 100_000_000) * rate.rate;
@@ -1607,7 +1794,7 @@ class AppState {
 	}
 
 	satoshiToFiatStr(satoshi){
-		const fiat_code = this.getSettings()?.fiat_code || null;
+		const fiat_code = this.getSetting('fiat_code');
 		if (!fiat_code) return "---";
 		const curr_char		= this.fiatCodeToSymbol(fiat_code);
 		var curr_accuracy 	= 2; // TODO: Add special cases for certain fiat codes
@@ -1620,7 +1807,7 @@ class AppState {
         form.innerHTML = ''; // Clear the form
 
 		// Get alpha sorted keys from this.state.settings
-		const sortedKeys = Object.keys(this.state.settings).sort();
+		const sortedKeys = Object.keys(this.settingsDefault).sort();
 
         for (var i=0; i<sortedKeys.length; i++) {
 			const key  	= sortedKeys[i];
@@ -1629,21 +1816,26 @@ class AppState {
             form.appendChild(label);
 
             let input;
-            if (typeof this.state.settings[key] === 'boolean') {
+            if (typeof this.settingsDefault[key] === 'boolean') {
                 input = document.createElement('select');
                 ['true', 'false'].forEach(optionValue => {
                     const option = document.createElement('option');
                     option.value = optionValue;
                     option.text = optionValue.charAt(0).toUpperCase() + optionValue.slice(1);
-                    if (String(this.state.settings[key]) === optionValue) {
+                    if (String(this.state.settings?.[key]) === optionValue) {
                         option.selected = true;
                     }
                     input.appendChild(option);
                 });
             } else {
                 input = document.createElement('input');
-                input.type = typeof this.state.settings[key] === 'number' ? 'number' : 'text';
-                input.value = this.state.settings[key];
+                input.type = typeof this.settingsDefault[key] === 'number' ? 'number' : 'text';
+				if(input.type == 'number' && key in this.settingsLimits){
+					const limits = this.settingsLimits[key];
+					input.min = limits[0];
+					input.max = limits[1];
+				}
+                input.value = this.state.settings?.[key] || this.settingsDefault[key];
             }
             input.name = key;
             form.appendChild(input);
@@ -1693,6 +1885,7 @@ class AppState {
         // Add the submit button
         const submitButton = document.createElement('button');
         submitButton.type = 'submit';
+		submitButton.classList.add('submit_settings_button');
         submitButton.textContent = 'Save Settings';
         form.appendChild(submitButton);
     }
@@ -1713,14 +1906,13 @@ class AppState {
 			total_invoices++;
 
 			// We only want invoices for the current server
-			if (this.state.invoices[name].server_url !== this.getSettings().server_url) {
+			if (this.state.invoices[name].server_url !== this.getSetting('server_url')) {
 				continue;
 			}
 
 			server_invoices++;
 
 			const invoice = JSON.parse(JSON.stringify(this.state.invoices[name]));
-			console.log(invoice);
 			// Create a div for each invoice
 			const invoiceDiv = document.createElement('div');
 			invoiceDiv.setAttribute("data-captcha-id",name);
@@ -1736,7 +1928,9 @@ class AppState {
 
 			// Create and append invoice details
 			const nameElement = document.createElement('strong');
-			nameElement.textContent = name.substring(0, 5) + '...';
+			nameElement.textContent = name.substring(0, 8) + '...';
+			const alias = invoice?.alias || null;
+			if(alias && typeof alias == 'string') nameElement.textContent = alias;
 			invoiceDiv.appendChild(nameElement);
 			invoiceDiv.appendChild(document.createElement('br'));
 
@@ -1771,11 +1965,12 @@ class AppState {
 			createdElement.textContent = `Created: ${invoice.created}`;
 			invoiceDiv.appendChild(createdElement);
 
+			const repoElement = document.createElement('a');
+			repoElement.textContent = `ERROR: No Recovery Phrase!`;
+			repoElement.href = '#';
 			if(invoice.repo){
-				const repoElement = document.createElement('a');
-				repoElement.textContent = `⭳⭳`;
+				repoElement.textContent = `Copy Recovery Phrase`;
 				repoElement.title = "Copy Recovery Phrase to clipboard";
-				repoElement.href = '#';
 				repoElement.addEventListener('click', (e) => {
 					e.preventDefault();
 					navigator.clipboard.writeText(invoice.repo);
@@ -1783,31 +1978,34 @@ class AppState {
 					e.target.style.opacity = 0;
 					setTimeout(() => e.target.style.opacity = 1, 700); 
 				});
-				invoiceDiv.appendChild(repoElement);
-			}else{
-				const repoElement = document.createElement('span');
-				repoElement.textContent = `No Recovery Phrase`;
-				invoiceDiv.appendChild(repoElement);
 			}
+			const repoIcon = this.heroicon('clipboard-document');
+			repoIcon.style.marginRight = '5px';
+			repoElement.prepend(repoIcon);
 
+
+			const invoiceLink = document.createElement('a');
+			invoiceLink.textContent = `ERROR: No invoice link!`;
+			invoiceLink.href = "#";
 			if(invoice.link){
-				const invoiceLink = document.createElement('a');
-				invoiceLink.textContent = `🗎`;
-				invoiceLink.title = "Open Invoice";
+				invoiceLink.textContent = `Open Invoice`;
 				invoiceLink.href = invoice.link;
 				invoiceLink.target = '_blank';
-				invoiceLink.style.paddingLeft = '10px';
-				invoiceDiv.appendChild(invoiceLink);
 			}
+			const invoiceLinkIcon = this.heroicon('document-currency-dollar');
+			invoiceLinkIcon.style.marginRight = '5px';
+			invoiceLink.prepend(invoiceLinkIcon);
 
 			const redeemLink = document.createElement('a');
-			redeemLink.textContent = `🗘`;
+			redeemLink.textContent = `Update Balance`;
 			redeemLink.title = "Redeem/Refresh this invoice";
 			redeemLink.href = '#';
-			redeemLink.style.paddingLeft = '10px';
 			redeemLink.classList.add('invoice_redeem_link');
 			redeemLink.setAttribute("data-captcha-id",name);
 			redeemLink.setAttribute("data-captcha-id",name);
+			const redeemIcon = this.heroicon('arrow-path');
+			redeemIcon.style.marginRight = '5px';
+			redeemLink.prepend(redeemIcon);
 			redeemLink.addEventListener('click', (e) => {
 				// empty the invoice container and add wait message
 				const click_target_parent = e.target.parentElement;
@@ -1820,18 +2018,20 @@ class AppState {
 				const captchaId = e.target.getAttribute('data-captcha-id');
 				this.redeemInvoice(captchaId);
 			});
-			invoiceDiv.appendChild(redeemLink);
 
 			// Request payout link
 			const payoutLink = document.createElement('a');
-			payoutLink.textContent = `₿`;
+			payoutLink.textContent = `Request Payout`;
 			payoutLink.title = "Request a payout for this invoice";
 			payoutLink.href = '#';
-			payoutLink.style.fontSize = '15px';
-			payoutLink.style.paddingLeft = '10px';
 			payoutLink.classList.add('invoice_payout_link');
 			payoutLink.setAttribute("data-captcha-id",name);
+			const payoutIcon = document.createElement('span');
+			payoutIcon.textContent = '₿';
+			payoutIcon.style.marginRight = '5px';
+			payoutLink.prepend(payoutIcon);
 			payoutLink.addEventListener('click', (e) => {
+				e.preventDefault();
 				// Get the captcha ID from the clicked element
 				const captchaId 	= e.currentTarget.getAttribute('data-captcha-id');
 				const secret 		= this.state.invoices[captchaId].secret
@@ -1844,20 +2044,23 @@ class AppState {
 					this.feed("BTC receiving address must be at least 26 characters.");
 					return;
 				}
-				const settings = this.getSettings();
-				const payoutEndpoint = `${settings.server_url}/get_funds`;
+				const server_url = this.getSetting('server_url');
+				if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+					this.feed('No server URL set.', true);
+					return;
+				}
+				const payoutEndpoint = `${server_url}/get_funds`;
 				const formData = new FormData();
 				formData.append('captcha_id', captchaId);
 				formData.append('secret', secret);
 				formData.append('send_to_address', sentToAddress.trim());
 				// Send the POST request to redeem the invoice
-				this.currentAJAXCall = true;
 				fetch(payoutEndpoint, {
 					method: 'POST',
 					body: formData
 				})
 				.then(response => {
-					this.currentAJAXCall = false;
+					
 					if (response.ok) {
 						return response.text();
 					} else {
@@ -1865,7 +2068,7 @@ class AppState {
 					}
 				})
 				.then(json => {
-					this.currentAJAXCall = false;
+					
 					const data = typeof json == 'string'? JSON.parse(json): json;
 					if(!data || typeof data != 'object'){
 						this.feed('Server response parse failed.', true);
@@ -1894,11 +2097,175 @@ class AppState {
 				.catch(error => {
 					this.feed('There has been a problem with your fetch operation. See console.', true);
 					console.error(error);
-				})
-				.finally(() => {
-					this.currentAJAXCall = false;
 				});
 			});
+
+			const verifyLink = document.createElement('a');
+			verifyLink.textContent = `Get Verified Username or Nickname`;
+			verifyLink.title = "Get a verified username for this virtual wallet.";
+			verifyLink.href = '#';
+			verifyLink.classList.add('invoice_verify_link');
+			verifyLink.setAttribute("data-captcha-id",name);
+			const verifyIcon = this.heroicon('check-badge');
+			verifyIcon.style.marginRight = '5px';
+			verifyLink.prepend(verifyIcon);
+			verifyLink.addEventListener('click', (e) => {
+				e.preventDefault();
+				document.querySelectorAll('.invoice_verification_form').forEach((form) => form.remove());
+				document.querySelectorAll('.invoice_verification_cancel_link').forEach((link) => link.remove());
+				const cancelVerificationLink = document.createElement('a');
+				cancelVerificationLink.innerHTML = '<strong style="font-style:normal;">X</strong>&nbsp;&nbsp;<span style="font-style:italic;">Cancel</span>';
+				cancelVerificationLink.href = '#';
+				cancelVerificationLink.style.filter = 'grayscale(1)';
+				cancelVerificationLink.style.opacity = '0.5';
+				cancelVerificationLink.style.display = 'inline-block';
+				cancelVerificationLink.style.marginLeft = '15px';
+				cancelVerificationLink.style.marginBottom = '15px';
+				cancelVerificationLink.classList.add('invoice_verification_cancel_link');
+				cancelVerificationLink.addEventListener('click', (e) => {
+					e.preventDefault();
+					document.querySelectorAll('.invoice_verification_form').forEach((form) => form.remove());
+					document.querySelectorAll('.invoice_verification_cancel_link').forEach((link) => link.remove());
+				});
+				const verificationForm = document.createElement('form');
+				verificationForm.classList.add('invoice_verification_form');
+				verificationForm.setAttribute("data-captcha-id",name);
+				verificationForm.innerHTML = `
+					<br>
+					<strong style="font-size:20px;">Get a Username!</strong>
+					<br><br>
+					Update old chats and threads?
+					<br>
+					<select name="update_old_chats">
+						<option value="No" selected>No, just apply to new chats and threads</option>
+						<option value="Yes">Yes, update old chats and threads</option>
+					</select>
+					<br><br>
+					Previous Verified Usernames
+					<br>
+					<select name="previous_verified_usernames" data-captcha-id="${name}"><option value="0">Loading...</option></select>
+					<br><br>
+					<input type="text" name="username_submission" placeholder="New Username..." style="font-size:20px;">
+					<br><br>
+					Get Verified or get free nickname?
+					<br>
+					<select name="verification_type">
+						<option value="verified" selected>Verified Username (pay fee)</option>
+						<option value="nickname">Free Nickname (no fee)</option>
+					</select>
+					<br>
+					<strong>Fee:</strong> <span class="user_verification_fee">Loading...</span>
+					<br><br>
+					<input type="submit" value="Get New Username">
+					<br><br>
+					NOTE: This account will no longer be anonymous after adding a nickname or verified username. You will need to create/use a different account to post anonymously again.
+				`;
+
+				verificationForm.addEventListener('submit', (e) => {
+					e.preventDefault();
+					const formData = new FormData(e.currentTarget);
+					const captchaId = e.currentTarget.getAttribute('data-captcha-id');
+					const secret = this.state.invoices[captchaId].secret;
+					formData.append('captcha_id', captchaId);
+					formData.append('secret', secret);
+					const server_url = this.getSetting('server_url');
+					if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+						this.feed('No server URL set.', true);
+						return;
+					}
+					const verificationEndpoint 	= `${server_url}/verified_name`;
+					const nickNameEndpoint 		= `${server_url}/preferred_name`;
+					const verificationType 		= formData.get('verification_type');
+					const useEndpoint			= verificationType == 'verified'? verificationEndpoint: nickNameEndpoint;
+					const submitButton 			= e.currentTarget.querySelector('input[type="submit"]');
+					console.log(useEndpoint,formData.get('username_submission'),formData.get('update_old_chats'));
+					submitButton.disabled = true;
+					submitButton.value = 'Please wait...';
+					// send it
+					this.transactionCaptcha = captchaId;
+					fetch(useEndpoint, {
+						method: 'POST',
+						body: formData
+					})
+					.then(response => {
+						if (response.ok) {
+							return response.text();
+						} else {
+							throw new Error('Network response was not ok');
+						}
+					})
+					.then(json => {
+						const data = typeof json == 'string'? JSON.parse(json): json;
+						if(!data || typeof data != 'object'){
+							this.feed('Server response parse failed.', true);
+							return;
+						}
+						if(data.error){
+							this.feed(`Error: ${data.error.toString()}`, true);
+						}else if(data.msg){
+							this.feed(data.msg);
+							const new_username = data?.new_username || null;
+							if(new_username){
+								const invoice = this.state.invoices?.[this.transactionCaptcha] || null;
+								if(invoice){
+									invoice.alias = new_username;
+									this.skipFeed = true;
+									this.redeemInvoice(this.transactionCaptcha);
+								}else{
+									this.feed('No invoice found for this captcha ID.', true);
+								}
+							}else{
+								this.feed('No id/username pair found in server response.', true);
+							}
+						}
+						document.querySelectorAll('.invoice_verification_form').forEach((form) => form.remove());
+						document.querySelectorAll('.invoice_verification_cancel_link').forEach((link) => link.remove());
+					})
+				});
+
+
+				// Get the verification fee
+				const server_url = this.getSetting('server_url');
+				if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+					this.feed('No server URL set.', true);
+					return;
+				}
+				const verificationFeeEndpoint = `${server_url}/static/current_fees.json`;
+				fetch(verificationFeeEndpoint)
+				.then(response => {
+					if (response.ok) {
+						return response.text();
+					} else {
+						throw new Error('Network response was not ok');
+					}
+				})
+				.then(json => {
+					const data = typeof json == 'string'? JSON.parse(json): json;
+					var vfee = data?.verified_name || {};
+						vfee = (vfee && typeof vfee == 'object')? vfee: {};
+					const fee 	= vfee.fee || null;
+					const unit 	= vfee.unit || null;
+					var feeStr 	= 'ERROR: Fee not found!';
+					if(fee && unit){
+						const stats = this.fiatToSatoshi(fee, unit);
+						const fiatStr = this.satoshiToFiatStr(stats, unit);
+						feeStr = `${fiatStr} (${stats} sats)`;
+					}
+					document.querySelectorAll('.user_verification_fee').forEach((el) => el.textContent = feeStr);
+				});
+				e.currentTarget.after(cancelVerificationLink);
+				e.currentTarget.after(verificationForm);
+			});
+
+			invoiceDiv.appendChild(document.createElement('br'));
+			invoiceDiv.appendChild(verifyLink);
+			invoiceDiv.appendChild(document.createElement('br'));
+			invoiceDiv.appendChild(repoElement);
+			invoiceDiv.appendChild(document.createElement('br'));
+			invoiceDiv.appendChild(invoiceLink);
+			invoiceDiv.appendChild(document.createElement('br'));
+			invoiceDiv.appendChild(redeemLink);
+			invoiceDiv.appendChild(document.createElement('br'));
 			invoiceDiv.appendChild(payoutLink);
 
 			// Append the invoice div to the container
@@ -1920,20 +2287,26 @@ class AppState {
 	}
 
 	redeemInvoice(captchaId){
-		const settings = this.getSettings();
-		const redeemEndpoint = `${settings.server_url}/redeem_invoice`;
+		if(this.paused) return;
+		console.trace('redeemInvoice() traced for bug hunting.');
+		app.transactionCaptcha = null; // this should be set to null after the transaction is complete and the balance is updated with this method.
+		const server_url = this.getSetting('server_url');
+		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+			this.feed('No server URL set.', true);
+			return;
+		}
+		const redeemEndpoint = `${server_url}/redeem_invoice`;
 		const formData = new FormData();
 		formData.append('captcha_id', captchaId);
 		formData.append('secret', this.state.invoices[captchaId].secret);
 
 		// Send the POST request to redeem the invoice
-		this.currentAJAXCall = true;
 		fetch(redeemEndpoint, {
 			method: 'POST',
 			body: formData
 		})
 		.then(response => {
-			this.currentAJAXCall = false;
+			
 			if (response.ok) {
 				return response.text();
 			} else {
@@ -1941,7 +2314,7 @@ class AppState {
 			}
 		})
 		.then(json => {
-			this.currentAJAXCall = false;
+			
 			const data = typeof json == 'string'? JSON.parse(json): json;
 			if(!data || typeof data != 'object'){
 				this.feed('Server response parse failed.', true);
@@ -1971,9 +2344,6 @@ class AppState {
 		.catch(error => {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
 			console.error(error);
-		})
-		.finally(() => {
-			this.currentAJAXCall = false;
 		});
 	}
 
@@ -2003,7 +2373,10 @@ const app = new AppState();
 
 /* Extension functionality */
 chrome.runtime.onMessage.addListener((message) => {
-	if (message.url) app.getThreads(message.url, message.metadata);
+	if (message.cunurl){
+		app.updateCurrentUserURL(message.cunurl);
+	}
+	if (message.cunmetadata) app.updateCurrentMetadata(message.cunmetadata);
 });
 
 /* Named functions */
@@ -2059,6 +2432,8 @@ function load_invoice_selectors(){
 	const invoiceSelectors 	= document.getElementsByClassName('invoice_selector');
 	for (let i = 0; i < invoiceSelectors.length; i++) {
 		const invoiceSelector = invoiceSelectors[i];
+		const previouslySelected = invoiceSelector.value;
+		const currentCaptcha = app.currentCaptcha;
 		invoiceSelector.innerHTML = '';
 		// sort invoices by balance in decending order
 		const sortedInvoices = Object.keys(invoices).sort((a, b) => invoices[b].balance - invoices[a].balance );
@@ -2067,17 +2442,24 @@ function load_invoice_selectors(){
 			var invoice = invoices[captchaId];
 			var balance = (invoice.balance && !isNaN(invoice.balance))? invoice.balance: 0;
 			if(balance <= 0) continue;
-			if(invoice.server_url !== app.getSettings().server_url) continue; // skip invoices for other servers
+			if(invoice.server_url !== app.getSetting('server_url')) continue; // skip invoices for other servers
 			var cur_bal 	= app.satoshiToFiatStr(balance);
 			const option 	= document.createElement('option');
-			const current 	= captchaId === app.currentCaptcha? true: false;
-			if(current) option.selected = true;
+			if(currentCaptcha && currentCaptcha === captchaId){
+				option.selected = true;
+			}else if(previouslySelected && previouslySelected === captchaId){
+				option.selected = true;
+			}
 			option.value 	= captchaId;
 			var captchaName = captchaId.substring(0, 8) + '...';
 			if(invoice.alias) captchaName = invoice.alias.toString();
 			option.textContent = `${String(balance).padStart(8,"0")}  |  ${cur_bal}  |  ${captchaName}...`;
 			invoiceSelector.appendChild(option);
 		}
+		const freeChatOption = document.createElement('option');
+		freeChatOption.value = 'free';
+		freeChatOption.textContent = 'Free Chat Mode (not eligible for payouts)';
+		invoiceSelector.appendChild(freeChatOption);
 	}
 }
 /* Listeners (add after doc ready) */
@@ -2102,6 +2484,8 @@ document.addEventListener('DOMContentLoaded', () => {
 			formObject[key] = value;
 		});
 		app.updateSettings(formObject);
+		form.querySelector('.submit_settings_button').textContent = 'Extension Settings Saved!';
+		setTimeout(() => form.querySelector('.submit_settings_button').textContent = 'Save Settings', 2000);
 	});
 	document.getElementById('create_thread_toggle_link').addEventListener('click', () => {
 		// toggle #create_thread_form
@@ -2206,5 +2590,9 @@ document.addEventListener('DOMContentLoaded', () => {
 		event.preventDefault();
 		document.getElementById('cross_post_container').style.display = 'none';
 		document.getElementById('cross_post_clone_container').innerHTML = '';
+	});
+	document.getElementById('pause').addEventListener('click', (event) => {
+		event.preventDefault();
+		app.pause();
 	});
 });
