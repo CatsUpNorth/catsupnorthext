@@ -2,6 +2,7 @@
 class AppState {
 	constructor() {
 		this.version			= '0.0.1';
+		this.darkMode			= false;
 		this.paused 			= false;
 		this.state				= {};
 		this.settingsSchema 	= {};
@@ -91,7 +92,7 @@ class AppState {
 			console.error('Error starting polling:', e);
 		}
 		const thread_container = document.getElementById('thread_container');
-		if(!thread_container.classList.contains('thread')){
+		if(thread_container && !thread_container.classList.contains('thread')){
 			this.getThreads();
 		}
 		var hardThreadInterval 	= this.getSetting('refresh_threads_microseconds');
@@ -380,6 +381,10 @@ class AppState {
 			if(!password && thread_id) password = this.getCachedPass(thread_id);
 			formData.append('password', password);
 		}
+
+		// empty the cross_post_container
+		document.getElementById('cross_post_container').innerHTML = '';
+
 		fetch(chatEndpoint, {
 			method: 'POST',
 			body: formData
@@ -592,6 +597,7 @@ class AppState {
 				const followItem = document.createElement('li');
 				const followLink = document.createElement('a');
 				followLink.href = `${serverURL}/${follow}`;
+				followLink.target = '_blank';
 				followLink.textContent = follow;
 				followItem.classList.add('follow_item');
 				followItem.appendChild(followLink);
@@ -2138,15 +2144,15 @@ class AppState {
 					Update old chats and threads?
 					<br>
 					<select name="update_old_chats">
-						<option value="No" selected>No, just apply to new chats and threads</option>
-						<option value="Yes">Yes, update old chats and threads</option>
+						<option value="Yes" selected>Yes, update old chats and threads</option>
+						<option value="No">No, just apply to new chats and threads.</option>
 					</select>
 					<br><br>
 					Previous Verified Usernames
 					<br>
 					<select name="previous_verified_usernames" data-captcha-id="${name}"><option value="0">Loading...</option></select>
 					<br><br>
-					<input type="text" name="username_submission" placeholder="New Username..." style="font-size:20px;">
+					<input type="text" name="username_submission" data-captcha-id="${name}" placeholder="New Username..." style="font-size:20px;">
 					<br><br>
 					Get Verified or get free nickname?
 					<br>
@@ -2179,7 +2185,6 @@ class AppState {
 					const verificationType 		= formData.get('verification_type');
 					const useEndpoint			= verificationType == 'verified'? verificationEndpoint: nickNameEndpoint;
 					const submitButton 			= e.currentTarget.querySelector('input[type="submit"]');
-					console.log(useEndpoint,formData.get('username_submission'),formData.get('update_old_chats'));
 					submitButton.disabled = true;
 					submitButton.value = 'Please wait...';
 					// send it
@@ -2225,14 +2230,20 @@ class AppState {
 				});
 
 
-				// Get the verification fee
+				// Get previous verified usernames and the the verification fee
 				const server_url = this.getSetting('server_url');
 				if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
 					this.feed('No server URL set.', true);
 					return;
 				}
-				const verificationFeeEndpoint = `${server_url}/static/current_fees.json`;
-				fetch(verificationFeeEndpoint)
+				const previousVerifiedNamesEndpoint = `${server_url}/verified_names_previous`;
+				const formData = new FormData();
+				formData.append('captcha_id', captchaId);
+				formData.append('secret', this.getInvoiceSecret(captchaId));
+				fetch(previousVerifiedNamesEndpoint, {
+					method: 'POST',
+					body: formData
+				})
 				.then(response => {
 					if (response.ok) {
 						return response.text();
@@ -2242,17 +2253,63 @@ class AppState {
 				})
 				.then(json => {
 					const data = typeof json == 'string'? JSON.parse(json): json;
-					var vfee = data?.verified_name || {};
-						vfee = (vfee && typeof vfee == 'object')? vfee: {};
-					const fee 	= vfee.fee || null;
-					const unit 	= vfee.unit || null;
-					var feeStr 	= 'ERROR: Fee not found!';
-					if(fee && unit){
-						const stats = this.fiatToSatoshi(fee, unit);
-						const fiatStr = this.satoshiToFiatStr(stats, unit);
-						feeStr = `${fiatStr} (${stats} sats)`;
+					if(!data || typeof data != 'object'){
+						this.feed('Server response parse failed.', true);
+						return;
 					}
-					document.querySelectorAll('.user_verification_fee').forEach((el) => el.textContent = feeStr);
+					const captcha_id = data?.captcha_id || null;
+					const verified_names = data?.verified_names || [];
+					if(captcha_id){
+						const select = verificationForm.querySelector(`select[name="previous_verified_usernames"][data-captcha-id="${captcha_id}"]`);
+						if(select){
+							if(verified_names.length > 0){
+								select.innerHTML = '';
+								verified_names.forEach((name) => {
+									const option = document.createElement('option');
+									option.value = name;
+									option.textContent = name;
+									select.appendChild(option);
+								});
+							}else{
+								select.innerHTML = '<option value="0">None</option>';
+							}
+							select.addEventListener('change', (e) => {
+								const captchaId = e.target.getAttribute('data-captcha-id');
+								const input = document.querySelector(`input[name="username_submission"][data-captcha-id="${captchaId}"]`);
+								input.value = e.target.value.replace(/\$/g,'');
+							});
+						}
+					}
+
+					// Get the verification fee
+					const server_url = this.getSetting('server_url');
+					if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+						this.feed('No server URL set.', true);
+						return;
+					}
+					const verificationFeeEndpoint = `${server_url}/static/current_fees.json`;
+					fetch(verificationFeeEndpoint)
+					.then(response => {
+						if (response.ok) {
+							return response.text();
+						} else {
+							throw new Error('Network response was not ok');
+						}
+					})
+					.then(json => {
+						const data = typeof json == 'string'? JSON.parse(json): json;
+						var vfee = data?.verified_name || {};
+							vfee = (vfee && typeof vfee == 'object')? vfee: {};
+						const fee 	= vfee.fee || null;
+						const unit 	= vfee.unit || null;
+						var feeStr 	= 'ERROR: Fee not found!';
+						if(fee && unit){
+							const stats = this.fiatToSatoshi(fee, unit);
+							const fiatStr = this.satoshiToFiatStr(stats, unit);
+							feeStr = `${fiatStr} (${stats} sats)`;
+						}
+						document.querySelectorAll('.user_verification_fee').forEach((el) => el.textContent = feeStr);
+					});
 				});
 				e.currentTarget.after(cancelVerificationLink);
 				e.currentTarget.after(verificationForm);
@@ -2271,6 +2328,7 @@ class AppState {
 
 			// Append the invoice div to the container
 			container.appendChild(invoiceDiv);
+			this.updateFollowList(name);
 			setTimeout(load_invoice_selectors, 10);
 		}
 
@@ -2595,5 +2653,26 @@ document.addEventListener('DOMContentLoaded', () => {
 	document.getElementById('pause').addEventListener('click', (event) => {
 		event.preventDefault();
 		app.pause();
+	});
+	const darkModeLink = document.getElementById('dark_mode_toggle');
+	// load it with an icon on startup.
+	const darkModeIcon = app.heroicon('moon');
+	darkModeIcon.style.paddingLeft = '5px';
+	darkModeLink.appendChild(darkModeIcon);
+	const extCSSLink = document.getElementById('extension_css_link');
+	darkModeLink.addEventListener('click', (event) => {
+		event.preventDefault();
+		app.darkMode = !app.darkMode;
+		if(app.darkMode){
+			const darkModeIcon = app.heroicon('sun');
+			darkModeLink.innerHTML = '';
+			darkModeLink.appendChild(darkModeIcon);
+			extCSSLink.setAttribute('href', 'monitor_dark.css');
+		}else{
+			const darkModeIcon = app.heroicon('moon');
+			darkModeLink.innerHTML = '';
+			darkModeLink.appendChild(darkModeIcon);
+			extCSSLink.setAttribute('href', 'monitor.css');
+		}
 	});
 });
