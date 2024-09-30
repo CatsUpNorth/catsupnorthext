@@ -1,14 +1,39 @@
 
 :root{
-  --cun_green: rgb(1, 64, 54);
-  --cun_dark_green: rgb(1, 64, 54);
+
+  /* To create the dark mode css file, replace the regular variables in the styles with the --[name]_darkmode vars */
+
+  /* Brand colors */
+  --cun_green: rgb(69, 85, 79);
   --cun_tan: rgb(255, 244, 213);
   --cun_dark_tan: rgb(188, 172, 129);
+
+  /* Dark mode brand colors */
+  --cun_green_darkmode: rgb(3, 13, 9);
+  --cun_tan_darkmode: rgb(188, 172, 129);
+  --cun_dark_tan_darkmode: rgb(92, 85, 66);
+
+  /* Utility colors */
+  --cun_black: rgb(20,20,20);
+  --cun_white: rgb(255,250,240);
+  --cun_grey: rgb(130,130,130);
+  --cun_red: rgb(255,0,40);
+  --cun_blue: rgb(0,40,255);
+  --cun_light_blue: rgb(40,110,255);
+
+  /* Dark mode utility colors */
+  --cun_black_darkmode: rgb(255,250,240);
+  --cun_white_darkmode: rgb(20,20,20);
+  --cun_grey_darkmode: rgb(100,100,100);
+  --cun_red_darkmode: rgb(255,110,110);
+  --cun_blue_darkmode: rgb(40,110,255);
+  --cun_light_blue_darkmode: rgb(40,165,255);
+
 }
 
 body {
   font-family: Arial, sans-serif;
-  background-color: rgb(69, 85, 79);
+  background-color: var(--cun_green);
 }
 
 .tab-container {

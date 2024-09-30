@@ -332,13 +332,13 @@ class AppState {
 	}
 
 	// Create a thread
-	createThread(captcha_id, description, password, css) {
+	createThread(captcha_id, description, password, css, channel = null) {
 		if(this.paused) return;
-		this.sendChat(captcha_id, description, 0, 0, 0, password, css);
+		this.sendChat(captcha_id, description, 0, 0, 0, password, css, channel);
 	}
 
 	// send chat or create threda (reply_to is zero)
-	sendChat(captcha_id, content, reply_to = 0, thread_id = 0, spend = 0, password = null, css = null){
+	sendChat(captcha_id, content, reply_to = 0, thread_id = 0, spend = 0, password = null, css = null, channel = null) {
 		if(this.paused) return;
 
 		// Save these just in case the user needs to complete a captcha
@@ -369,6 +369,7 @@ class AppState {
 		formData.append('reply_to', reply_to);
 		formData.append('thread_id', thread_id);
 		formData.append('css', css);
+		formData.append('channel', channel);
 		if(!reply_to){
 			for(var prop in this.state.current_metadata){ // New thread, send URL metadata for card creation
 				if(!prop || prop.length < 1) continue;
@@ -2276,7 +2277,7 @@ class AppState {
 							select.addEventListener('change', (e) => {
 								const captchaId = e.target.getAttribute('data-captcha-id');
 								const input = document.querySelector(`input[name="username_submission"][data-captcha-id="${captchaId}"]`);
-								input.value = e.target.value.replace(/\$/g,'');
+								input.value = e.target.value.replace(/\$/g,'').replace(/_/g,' ');
 							});
 						}
 					}
@@ -2546,21 +2547,6 @@ document.addEventListener('DOMContentLoaded', () => {
 		form.querySelector('.submit_settings_button').textContent = 'Extension Settings Saved!';
 		setTimeout(() => form.querySelector('.submit_settings_button').textContent = 'Save Settings', 2000);
 	});
-	document.getElementById('create_thread_toggle_link').addEventListener('click', () => {
-		// toggle #create_thread_form
-		const form = document.getElementById('create_thread_form');
-		const link = document.getElementById('create_thread_toggle_link');
-		const form_is_visible = form.style.display !== 'none';
-		if (form_is_visible){
-			link.textContent 	= '⨤ Create Thread';
-			form.style.display 	= 'none';
-		} else {
-			// Add invoice captcha_ids to .invoice_selector dropdown
-			load_invoice_selectors();
-			link.textContent 		= '🗙 Hide Form';
-			form.style.display		= 'block';
-		}
-	});
 	document.getElementById('create_thread_form').addEventListener('submit', (event) => {
 		event.preventDefault();
 		const form = event.target;
@@ -2569,7 +2555,7 @@ document.addEventListener('DOMContentLoaded', () => {
 		formData.forEach((value, key) => {
 			formObject[key] = value;
 		});
-		app.createThread(formObject.captcha_id,formObject.content,formObject.password,formObject.css);
+		app.createThread(formObject.captcha_id,formObject.content,formObject.password,formObject.css, formObject.channel);
 	});
 	
 	// invoice recovery
@@ -2674,5 +2660,95 @@ document.addEventListener('DOMContentLoaded', () => {
 			darkModeLink.appendChild(darkModeIcon);
 			extCSSLink.setAttribute('href', 'monitor.css');
 		}
+	});
+	function loadChannelSelector(){ // loads channel selector based on the selected account.
+		console.log('loadChannelSelector()');
+		const invoiceSelector = document.getElementById('create_thread_invoice_selector');
+		if(!invoiceSelector) return;
+		console.log('loadChannelSelector() - invoiceSelector found.');
+		const captcha_id = invoiceSelector.value;
+		if(!captcha_id || typeof captcha_id != 'string' || captcha_id.toLowerCase().trim() == 'free') return;
+		console.log('loadChannelSelector() - captcha_id found.');
+		// fetch the channels for this account.
+		const formData = new FormData();
+		formData.append('captcha_id', captcha_id);
+		formData.append('secret', app.getInvoiceSecret(captcha_id));
+
+		const server_url = app.getSetting('server_url');
+		console.log({server_url});
+		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+			app.feed('No server URL set.', true);
+			return;
+		}
+		const getChannelsEndpoint = `${server_url}/get_my_channels`;
+		fetch(getChannelsEndpoint, {
+			method: 'POST',
+			body: formData
+		})
+		.then(response => {
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
+			}
+		})
+		.then(json => {
+			const data = typeof json == 'string'? JSON.parse(json): json;
+			if(!data || typeof data != 'object'){
+				app.feed('Server response parse failed.', true);
+				return;
+			}
+			console.log({data});
+			const channels = data.channels || [];
+			const channelSelector = document.getElementById('create_thread_channel_selector');
+			channelSelector.innerHTML = '<option value="">None</option>';
+			channels.forEach((channel) => {
+				const option = document.createElement('option');
+				option.value = channel;
+				option.textContent = channel;
+				channelSelector.appendChild(option);
+			});
+		});
+	}
+	document.getElementById('create_thread_toggle_link').addEventListener('click', () => {
+		// toggle #create_thread_form
+		const form = document.getElementById('create_thread_form');
+		const link = document.getElementById('create_thread_toggle_link');
+		const form_is_visible = form.style.display !== 'none';
+		if (form_is_visible){
+			link.textContent 	= '⨤ Create Thread';
+			form.style.display 	= 'none';
+		} else {
+			// Add invoice captcha_ids to .invoice_selector dropdown
+			load_invoice_selectors();
+			link.textContent 		= '🗙 Hide Form';
+			form.style.display		= 'block';
+			setTimeout(() => {
+				const channelContainer = document.getElementById('create_thread_channel_container');
+				const invoiceSelector = document.getElementById('create_thread_invoice_selector');
+				if(!channelContainer) return;
+				if(invoiceSelector && invoiceSelector.value === 'free'){
+					channelContainer.style.display = 'none';
+				}else{
+					channelContainer.style.display = 'block';
+					loadChannelSelector();
+				}
+			}, 300);
+		}
+	});
+	document.getElementById('create_thread_invoice_selector').addEventListener('change', (event) => {
+		const selected = event.target.value;
+		if(selected === 'free'){
+			document.getElementById('create_thread_channel_container').style.display = 'none';
+		}else{
+			document.getElementById('create_thread_channel_container').style.display = 'block';
+			loadChannelSelector();
+		}
+	});
+	document.getElementById('create_thread_channel_selector').addEventListener('change', (event) => {
+		event.preventDefault();
+		const selected = event.target.value;
+		const threadChannelInput = document.getElementById('thread_channel_input');
+		threadChannelInput.value = selected.trim();
 	});
 });

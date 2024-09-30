@@ -48,8 +48,13 @@
 		<form id="create_thread_form" style="display:none;">
 			<label for="content">Thread Description</label>
 			<input type="text" name="content" id="thread_content_input" required>
-			<label for="captcha_id">Invoice</label>
-			<select name="captcha_id" class="invoice_selector" required></select>
+			<label for="captcha_id">Account</label>
+			<select name="captcha_id" class="invoice_selector" id="create_thread_invoice_selector" required></select>
+			<div id="create_thread_channel_container" style="display:none;">
+				<label for="channel">Channel (optional)</label>
+				<select id="create_thread_channel_selector"></select>
+				<input type="text" name="channel" id="thread_channel_input">
+			</div>
 			<div style="display:none;">
 				<label for="css">CSS</label>
 				<textarea name="css" placeholder="CSS for the thread."></textarea>
