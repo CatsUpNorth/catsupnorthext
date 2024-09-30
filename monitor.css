@@ -1,33 +1,53 @@
 
 :root{
 
-  /* To create the dark mode css file, replace the regular variables in the styles with the --[name]_darkmode vars */
+  /* READ THIS BEFORE EDITING FILE! */
+  /* EVERY color variable needs a darkmode twin or the build_dark_mode.py script will assign a non-existant variable to a style. */
 
   /* Brand colors */
-  --cun_green: rgb(69, 85, 79);
-  --cun_tan: rgb(255, 244, 213);
+  --cun_green:    rgb(69, 85, 79);
+  --cun_tan:      rgb(255, 244, 213);
   --cun_dark_tan: rgb(188, 172, 129);
+  --cun_brown:    rgb(130, 119, 89);
 
   /* Dark mode brand colors */
-  --cun_green_darkmode: rgb(3, 13, 9);
-  --cun_tan_darkmode: rgb(188, 172, 129);
-  --cun_dark_tan_darkmode: rgb(92, 85, 66);
+  --cun_green_darkmode:     rgb(3, 13, 9);
+  --cun_tan_darkmode:       rgb(188, 172, 129);
+  --cun_dark_tan_darkmode:  rgb(92, 85, 66);
+  --cun_brown_darkmode:     rgb(85, 45, 25);
 
   /* Utility colors */
-  --cun_black: rgb(20,20,20);
-  --cun_white: rgb(255,250,240);
-  --cun_grey: rgb(130,130,130);
-  --cun_red: rgb(255,0,40);
-  --cun_blue: rgb(0,40,255);
+  --cun_black:      rgb(20,20,20);
+  --cun_white:      rgb(255,250,240);
+  --cun_grey:       rgb(130,130,130);
+  --cun_light_grey: rgb(210,210,210);
+  --cun_red:        rgb(255,0,40);
+  --cun_light_red:  rgb(255,110,110);
+  --cun_blue:       rgb(0,40,255);
   --cun_light_blue: rgb(40,110,255);
 
   /* Dark mode utility colors */
-  --cun_black_darkmode: rgb(255,250,240);
-  --cun_white_darkmode: rgb(20,20,20);
-  --cun_grey_darkmode: rgb(100,100,100);
-  --cun_red_darkmode: rgb(255,110,110);
-  --cun_blue_darkmode: rgb(40,110,255);
-  --cun_light_blue_darkmode: rgb(40,165,255);
+  --cun_black_darkmode:       rgb(255,250,240);
+  --cun_white_darkmode:       rgb(20,20,20);
+  --cun_grey_darkmode:        rgb(100,100,100);
+  --cun_red_darkmode:         rgb(255,110,110);
+  --cun_light_red_darkmode:   rgb(255,150,150);
+  --cun_blue_darkmode:        rgb(40,110,255);
+  --cun_light_blue_darkmode:  rgb(40,165,255);
+
+  /* Superchat colors */
+  --cun_metalic_gold:   #7b6800;
+  --cun_light_gold:     #ffda24;
+  --cun_metalic_gold_2: #ac920f;
+  --cun_light_gold_2:   #ffe669;
+  --cun_metalic_gold_3: #836f00;
+  
+  /* Dark mode superchat colors */
+  --cun_metalic_gold_darkmode:   #7b6800;
+  --cun_light_gold_darkmode:     #ffda24;
+  --cun_metalic_gold_2_darkmode: #ac920f;
+  --cun_light_gold_2_darkmode:   #ffe669;
+  --cun_metalic_gold_3_darkmode: #836f00;
 
 }
 
@@ -51,16 +71,16 @@ body {
   padding: 3px;
   text-align: center;
   cursor: pointer;
-  background-color: rgb(188, 172, 129);
-  color: rgb(59, 73, 71);
+  background-color: var(--cun_dark_tan);
+  color: var(--cun_green);
   margin-top: 4px;
   height: 16px;
-  border-right: 1px solid rgb(130, 119, 89);
+  border-right: 1px solid var(--cun_brown);
 }
 
 .tab.active {
-  background-color: rgb(255, 244, 213);
-  color: rgb(1, 64, 54);
+  background-color: var(--cun_tan);
+  color: var(--cun_green);
   font-weight: bold;
   height: 20px;
   margin-top: 0px;
@@ -70,7 +90,7 @@ body {
   border-radius: 0 0 5px 5px;
   display: none;
   padding: 10px;
-  background-color: rgb(255, 244, 213);
+  background-color: var(--cun_tan);
 }
 
 .tab-content.active {
@@ -86,14 +106,14 @@ body {
   margin-bottom: 4px;
   font-size:9px;
   overflow:hidden;
-  color: rgb(255, 244, 213) !important;
+  color: var(--cun_tan) !important;
 }
 
 #feed.error{
-  background-color: rgb(255, 255, 255);
-  color:red !important;
+  background-color: white; /* hard-coded white intentially */
+  color:var(--cun_red) !important;
   font-weight:600;
-  border: 2px dashed red;
+  border: 2px dashed var(--cun_red);
   border-radius:5px;
   padding:6px;
   font-style:italic;
@@ -103,7 +123,7 @@ body {
 form label {
   display: block;
   margin-bottom: 5px;
-  color: rgb(1, 64, 54);
+  color: var(--cun_green);
 }
 
 form input, 
@@ -112,14 +132,14 @@ form textarea {
   width: 100%;
   padding: 4px;
   margin-bottom: 7px;
-  border: 1px solid rgb(1, 64, 54);
+  border: 1px solid var(--cun_green);
   border-radius: 5px;
   box-sizing: border-box;
   font-size: 12px;
 }
 
 form button[type="submit"] {
-  background-color: rgb(1, 64, 54);
+  background-color: var(--cun_green);
   color: rgb(255, 244, 213);
   padding: 10px 20px;
   border: none;
@@ -132,7 +152,7 @@ form button[type="submit"]:hover {
 }
 
 .invoice{
-	border:1px solid rgb(1, 64, 54);
+	border:1px solid var(--cun_green);
 	border-radius:5px;
 	padding:5px;
 	margin:5px;
@@ -146,7 +166,7 @@ form button[type="submit"]:hover {
   display:block;
   margin:7px;
   padding:5px;
-  border: 1px solid rgb(1, 64, 54);
+  border: 1px solid var(--cun_green);
   border-radius:5px;
 }
 
@@ -228,7 +248,7 @@ a:hover {
   margin-bottom:5px;
   padding-top: 4px;
   padding-bottom: 4px;
-  border:1px solid rgb(1, 64, 54);
+  border:1px solid var(--cun_green);
   border-radius:3px;
   padding:3px;
   height:auto !important;
@@ -245,11 +265,11 @@ a:hover {
   border-top: none !important;
   border-left: none !important;
   border-right: none !important;
-  border-bottom: 1px solid rgb(1, 64, 54) !important;
+  border-bottom: 1px solid var(--cun_green) !important;
   border-radius:0;
   outline: none !important;
   background-color: rgba(0,0,0,0) !important;
-  color: rgb(1, 64, 54) !important;
+  color: var(--cun_green) !important;
   width: 90%;
 }
 .reply_form input[type="number"]{
@@ -260,7 +280,7 @@ a:hover {
   width: 30px;
   border: none;
   background-color: rgba(0,0,0,0);
-  color: rgb(1, 64, 54);
+  color: var(--cun_green);
   cursor: pointer;
   font-size:14px;
   opacity:0.7;
@@ -268,7 +288,6 @@ a:hover {
 }
 .reply_form button:hover {
   opacity:1;
-  background-color: rgba(255, 255, 255, 0.2);
 }
 .reply_form_super_chat_input_container.hidden{
   display:none;
@@ -280,7 +299,7 @@ a:hover {
   display:inline-block !important;
   margin:5px !important;
   background-color:rgba(0,0,0,0) !important;
-  color: rgb(1, 64, 54) !important;
+  color: var(--cun_green) !important;
   border:none !important;
   box-shadow: none !important;
   outline: none !important;
@@ -290,7 +309,7 @@ a:hover {
 }
 
 .reaction_link_span, .reaction_link_span a {
-  color: rgb(1, 64, 54);
+  color: var(--cun_green);
   text-decoration: none;
   cursor: pointer;
   font-size:11px;
@@ -300,7 +319,7 @@ a:hover {
   opacity: 1;
 }
 .my_reaction {
-  color: blue !important;
+  color: var(--cun_blue) !important;
   opacity: 1 !important;
 }
 .reaction_container, .chat_info_span {
@@ -337,16 +356,16 @@ a:hover {
   border-radius: 2px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(155, 126, 40,0.1);
+  background: var(--cun_dark_tan)
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(1, 64, 54,0.5);
+  background: var(--cun_green);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(1, 64, 54,0.9);
+  background: var(--cun_green);
 }
 #server_link, #conversion_rate{
-  color: rgb(188, 172, 129);
+  color: var(--cun_tan);
   text-decoration: none;
 }
 #server_link{
@@ -357,7 +376,7 @@ a:hover {
   width: 30px;
   border: none;
   background-color: rgba(0,0,0,0);
-  color: rgb(1, 64, 54);
+  color: var(--cun_green);
   cursor: pointer;
   font-size:14px;
   opacity:0.8;
@@ -370,6 +389,7 @@ a:hover {
 .chat_reply_btn:hover {
   opacity:1;
 }
+/* Leave the box shaddow alone here... It is used for 3D effect, not as a theme color */
 .superchat {
   opacity:1;
   border-top: 1px solid rgba(255,255,255,0.4);
@@ -378,9 +398,7 @@ a:hover {
   border-bottom: 1px solid rgba(0,0,0,0.4);
   background-clip: padding-box, border-box;
   background-origin: padding-box, border-box;
-  box-shadow: 0 0 5px rgba(255, 217, 1, 0.4); /* Optional gold glow */
   position:relative;
-  background-color: rgba(255,255,255,0.1);
   border-radius:4px !important;
 }
 .superchat:before {
@@ -396,11 +414,11 @@ a:hover {
   bottom: -4px;
   z-index: -1;
   background-image: linear-gradient(140deg,
-    #7b6800 0%,       /* Metallic gold */
-    #ffda24 25%,      /* Light gold */
-    #ac920f 50%,      /* Metallic gold */
-    #ffe669 75%,      /* Light gold */
-    #836f00 100%      /* Metallic gold */
+    var(--cun_metalic_gold)   0%,       /* Metallic gold */
+    var(--cun_light_gold)     25%,      /* Light gold */
+    var(--cun_metalic_gold_2) 50%,      /* Metallic gold */
+    var(--cun_light_gold_2)   75%,      /* Light gold */
+    var(--cun_metalic_gold_3) 100%      /* Metallic gold */
   );
   background-size: 200% 100%;
   animation: glimmer 5s ease-in-out infinite;  /* Same glimmer effect */
@@ -423,8 +441,8 @@ a:hover {
   text-align: center;
   font-size: 12px;
   font-weight: 900;
-  color: rgb(1, 64, 54) !important;
-  border-bottom: 2px solid rgb(1, 64, 54);
+  color: var(--cun_green) !important;
+  border-bottom: 2px solid var(--cun_green);
   margin-bottom: 7px;
 }
 
@@ -444,13 +462,13 @@ a:hover {
   margin-bottom: 2px;
   margin-left: 10px;
   margin-right: 10px;
-  border-bottom: 1px solid rgba(1, 64, 54,0.5);
+  border-bottom: 1px solid var(--cun_green);
   border-top: none;
   border-left: none;
   border-right: none;
 }
 #scroll_to_bottom_link{
-  color: rgb(188, 172, 129);
+  color: var(--cun_dark_tan);
   text-decoration: none;
   cursor: pointer;
   font-size: 12px;
@@ -470,7 +488,7 @@ a:hover {
   filter: scale(0.8);
 }
 #cancel_cross_post{
-  color: red;
+  color: var(--cun_red);
   text-decoration: none;
   cursor: pointer;
   font-size: 12px;
@@ -480,9 +498,9 @@ a:hover {
 }
 .cross_post_clone, .cross_post{
   background-image: none !important;
-  background-color: rgb(210,210,210);
-  border:1px solid red !important;
-  color:red !important;
+  background-color: var(--cun_light_grey);
+  border:1px solid var(--cun_red) !important;
+  color:var(--cun_red) !important;
   padding: 5px;
   margin-bottom: 12px;
   border-radius:5px;
@@ -494,50 +512,50 @@ a:hover {
   background-image: none !important;
 }
 .cross_post_clone strong, .cross_post_clone span, .cross_post strong, .cross_post span, .cross_post_clone .superchat_amount, .cross_post .superchat_amount{
-  color:rgb(210,0,0) !important;
+  color:var(--cun_light_red) !important;
   text-shadow: none !important;
   font-style: italic !important;
 }
 .cross_post_clone .superchat_amount svg, .cross_post .superchat_amount svg{
-  color:rgb(210,0,0) !important;
+  color:var(--cun_light_red) !important;
 }
 .cross_post_clone .superchat_amount, .cross_post .superchat_amount{
-  border-bottom: 1px solid rgb(210,0,0) !important;
+  border-bottom: 1px solid var(--cun_light_red) !important;
   text-shadow: none !important;
   font-style: italic !important;
 }
 .cros_post_container {
   align-items: center !important;
   font-style: italic !important;
-  color: rgb(210,0,0) !important;
+  color: var(--cun_light_red) !important;
 }
 .cros_post_clone_container {
   align-items: center !important;
   font-style: italic !important;
-  color: rgb(210,0,0) !important;
+  color: var(--cun_light_red) !important;
 }
 .cross_post_ext_link{
-  color:red !important;
+  color:var(--cun_red) !important;
   text-decoration: underline;
 }
 .free_chat_captcha_form{
   margin: 10px;
   padding: 10px;
-  border: 1px dashed red;
-  background-color: rgb(255,100,100);
-  color:red;
+  border: 1px dashed var(--cun_red);
+  background-color: var(--cun_light_red);
+  color:var(--cun_red);
   border-radius: 4px;
 }
 .free_chat_captcha_form img{
   border-radius:3px;
 }
 .free_chat_captcha_form input{
-  background-color: white;
-  border: 1px solid red;
-  color:red;
+  background-color: var(--cun_white);
+  border: 1px solid var(--cun_red);
+  color:var(--cun_red);
 }
 .free_chat, .free_thread {
   filter: invert(80%);
   opacity: 0.7;
-  border: 1px dashed red;
+  border: 1px dashed var(--cun_red);
 }
