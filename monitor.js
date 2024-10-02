@@ -1007,6 +1007,7 @@ class AppState {
 				crossPostLink.addEventListener('click', (event) => {
 					event.preventDefault();
 					const chat_id = event.currentTarget.getAttribute('data-chat-id');
+					console.log(chat_id);
 					const targetChatDiv = document.querySelector(`.chat[data-id="${chat_id}"]`);
 					if(!targetChatDiv) return;
 					const crossPostClone = targetChatDiv.cloneNode(true);
