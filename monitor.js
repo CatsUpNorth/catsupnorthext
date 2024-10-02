@@ -1,7 +1,7 @@
 /* App State */
 class AppState {
 	constructor() {
-		this.version			= '0.0.1';
+		this.version			= '0.0.2';
 		this.darkMode			= false;
 		this.paused 			= false;
 		this.state				= {};
@@ -427,6 +427,8 @@ class AppState {
 				captchaIdHidden.value = tmpCaptcha;
 				const captchaImg = document.createElement('img');
 				captchaImg.src = data.image_data.startsWith("data:image/png;base64,")? data.image_data: `data:image/png;base64,${data.image_data}`;
+				captchaImg.style.width = '100%';
+				captchaImg.style.maxWidth = '100%';
 				const captchaInput = document.createElement('input');
 				captchaInput.type = 'text';
 				captchaInput.name = 'human_guess';
@@ -1036,7 +1038,8 @@ class AppState {
 				replyLink.href = '#';
 				replyLink.addEventListener('click', (event) => {
 					event.preventDefault();
-					document.getElementById('cancel_cross_post').click(); // User obviously doesn't want to cross post anymore
+					const cancel_xpost_link = document.getElementById('cancel_cross_post');
+					if(cancel_xpost_link) cancel_xpost_link.click(); // User obviously doesn't want to cross post anymore
 					const form = chatDiv.querySelector('.reply_form');
 					form.style.display = form.style.display === 'none'? 'block': 'none';
 					// focus on the first text input
