@@ -1,7 +1,7 @@
 /* App State */
 class AppState {
 	constructor() {
-		this.version			= '0.0.3';
+		this.version			= '0.1.0';
 		this.paused 			= false;
 		this.state				= {};
 		this.settingsSchema 	= {};
