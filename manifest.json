@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "CatsUpNorth",
+  "name": "CatsUpNorthExt",
   "version": "1.0",
-  "description": "CatsUpNorth web extension",
+  "description": "CatsUpNorth Web externally_connectable",
   "icons": {
     "16": "images/icon-16.png",
     "48": "images/icon-48.png",
@@ -11,11 +11,11 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["monitor.js"]
+      "js": ["jquery.min.js", "index.js", "app.js"]
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'"
+    "extension_pages": "script-src 'self'"
   },
   "background": {
     "service_worker": "background.js"
@@ -28,13 +28,22 @@
     }
   },
   "side_panel": {
-    "default_path": "monitor.html",
+    "default_path": "index.html",
     "default_icon": {
       "16": "images/icon-16.png",
       "48": "images/icon-48.png",
       "128": "images/icon-128.png"
     }
   },
-  "permissions": ["sidePanel", "tabs", "storage", "background", "scripting", "activeTab", "externally_connectable", "webNavigation"],
+  "permissions": [
+    "sidePanel", 
+    "tabs", 
+    "storage", 
+    "background", 
+    "scripting",
+    "activeTab", 
+    "externally_connectable", 
+    "webNavigation"
+  ],
   "host_permissions": ["https://*/", "http://*/"]
 }
