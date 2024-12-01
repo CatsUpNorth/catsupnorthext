@@ -11,6 +11,7 @@
 let app = null,
 	lastUrlLoaded = null,
 	urlMetaData = null,
+	traceAll = true, // set to true in console to log all method calls. Only works if traceAllMethodCalls is uncommented.
 	urlMetaDataFrame = {
 		title: null, 
 		description: null, 
@@ -19,6 +20,33 @@ let app = null,
 		image: null, 
 		language: null
 	};
+
+// For debugging only. 
+// Comment out the invocation of this function in prod.
+function traceAllMethodCalls(targetClass) {
+    // Get all properties of the class, including methods.
+	const ignoredMethods = [
+		'constructor',			// Not sure if I should override this, but it's not likely to be an issue.
+		'heroicon',				// Fetches icon SVG, not likely to be an issue.
+		'getReplyToID', 		// Called in every poll loop.
+		'getCrossPostID',		// Called in every poll loop.
+		'getCurrentThreadID'	// Called in every poll loop.
+	];
+    const methodNames = Object.getOwnPropertyNames(targetClass.prototype)
+        .filter((prop) => typeof targetClass.prototype[prop] === 'function' && ignoredMethods.indexOf(prop) < 0);
+
+    // Override each method
+    for (const method of methodNames) {
+        const originalMethod = targetClass.prototype[method];
+
+        targetClass.prototype[method] = function (...args) {
+            if(traceAll) console.trace(`Method called: ${method}, Arguments:`, args);
+            return originalMethod.apply(this, args); // Call the original method
+        };
+    }
+}
+// COMMENT THIS OUT IN PROD!
+// traceAllMethodCalls(AppState);
 
 function scrapeURL(url){
 	if(!url) return;
@@ -485,13 +513,35 @@ $('document').ready(function(){
 			}
 		}
 		$('#send_verb').empty().append(send_verb);
+		traceAll = false;
 	}, 955);
 
-});
-// Track when the user's current url changes and load threads for the new page (new tab, new page, etc.)
-chrome.webNavigation.onCompleted.addListener((details) => { // Monitor when a user navigates to a new page in the current tab
-	if(!app) return; // app is loaded when page ready.
-	chrome.tabs.get(details.tabId, (tab) => {
+	
+	// Track when the user's current url changes and load threads for the new page (new tab, new page, etc.)
+	chrome.webNavigation.onCompleted.addListener((details) => { // Monitor when a user navigates to a new page in the current tab
+		if(!app) return; // app is loaded when page ready.
+		chrome.tabs.get(details.tabId, (tab) => {
+			if (tab && tab.url && tab.url != lastUrlLoaded){
+				app.getThreads(tab.url);
+				lastUrlLoaded = tab.url;
+				urlMetaData = null;
+				$('#chat_input').val('').trigger('keyup');
+			}
+		});
+	});
+	chrome.tabs.onActivated.addListener((activeInfo) => { // Listen for navigation on current tab
+		if(!app) return; // app is loaded when page ready.
+		chrome.tabs.get(activeInfo.tabId, (tab) => {
+			if (tab && tab.url && tab.url != lastUrlLoaded){
+				app.getThreads(tab.url);
+				lastUrlLoaded = tab.url;
+				urlMetaData = null;
+				$('#chat_input').val('').trigger('keyup');
+			}
+		});
+	});
+	chrome.tabs.onCreated.addListener((tab) => { // Listen for new tab creation
+		if(!app) return; // app is loaded when page ready.
 		if (tab && tab.url && tab.url != lastUrlLoaded){
 			app.getThreads(tab.url);
 			lastUrlLoaded = tab.url;
@@ -499,36 +549,17 @@ chrome.webNavigation.onCompleted.addListener((details) => { // Monitor when a us
 			$('#chat_input').val('').trigger('keyup');
 		}
 	});
-});
-chrome.tabs.onActivated.addListener((activeInfo) => { // Listen for navigation on current tab
-	if(!app) return; // app is loaded when page ready.
-	chrome.tabs.get(activeInfo.tabId, (tab) => {
-		if (tab && tab.url && tab.url != lastUrlLoaded){
-			app.getThreads(tab.url);
-			lastUrlLoaded = tab.url;
-			urlMetaData = null;
-			$('#chat_input').val('').trigger('keyup');
-		}
+	// Add a listener for sites that use pushState to change the URL without reloading the page.
+	chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+		if(!app) return; // app is loaded when page ready.
+		chrome.tabs.get(details.tabId, (tab) => {
+			if (tab && tab.url && tab.url != lastUrlLoaded){
+				app.getThreads(tab.url);
+				lastUrlLoaded = tab.url;
+				urlMetaData = null;
+				$('#chat_input').val('').trigger('keyup');
+			}
+		});
 	});
-});
-chrome.tabs.onCreated.addListener((tab) => { // Listen for new tab creation
-	if(!app) return; // app is loaded when page ready.
-	if (tab && tab.url && tab.url != lastUrlLoaded){
-		app.getThreads(tab.url);
-		lastUrlLoaded = tab.url;
-		urlMetaData = null;
-		$('#chat_input').val('').trigger('keyup');
-	}
-});
-// Add a listener for sites that use pushState to change the URL without reloading the page.
-chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
-	if(!app) return; // app is loaded when page ready.
-	chrome.tabs.get(details.tabId, (tab) => {
-		if (tab && tab.url && tab.url != lastUrlLoaded){
-			app.getThreads(tab.url);
-			lastUrlLoaded = tab.url;
-			urlMetaData = null;
-			$('#chat_input').val('').trigger('keyup');
-		}
-	});
+
 });

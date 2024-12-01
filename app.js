@@ -1,7 +1,7 @@
 /* App State */
 class AppState {
 	constructor() {
-		this.version			= '0.1.0';
+		this.version			= '1.0.0';
 		this.paused 			= false;
 		this.state				= {};
 		this.settingsSchema 	= {};
@@ -347,7 +347,6 @@ class AppState {
 		if(!reply_to){
 			for(var prop in this.state.currentMetadata){ // New thread, send URL metadata for card creation
 				if(!prop || prop.length < 1) continue;
-				console.log('PUSHING',prop,this.state.currentMetadata[prop]);
 				formData.append(`metadata_${prop}`, this.state.currentMetadata[prop] || null);
 			}
 			if(password){ // Don't send cached password if it's a new thread
@@ -560,11 +559,11 @@ class AppState {
 			const followList = $('<ul class="follow_ul"></ul>');
 			for(var i=0; i<followCount; i++){
 				const u = userFollows[i];
-				const unfollow_link = $(`<a href="#" class="unfollow_link error" data-alias="${u}" title="Unfollow this user">${this.heroicon('user-minus').outerHTML} Unfollow</a>`);
+				const unfollow_link = $(`<a href="#" class="unfollow_link error" data-alt-captcha="${captchaId}" data-alias="${u}" title="Unfollow this user">${this.heroicon('user-minus').outerHTML} Unfollow</a>`);
 				unfollow_link.on('click', (event) => {
 					const targ = $(event.currentTarget);
 					targ.animate({opacity: 0}, 200).animate({opacity: 1}, 200);
-					this.followUser(targ.data('alias'), 'yes', true);
+					this.followUser(targ.data('alias'), 'yes', true, targ.data('alt-captcha'));
 				});
 				const user_page_link = $(`<a class="follow_item" href="${serverURL}/u/${u}" title="Visit this user's page." target="_blank">${u}&nbsp;&nbsp;</a>`);
 				const li = $('<li></li>');
@@ -575,12 +574,15 @@ class AppState {
 		}
 	}
 
-	followUser(alias, unfollow_str = 'no', build_follow_list = false){
+	followUser(alias, unfollow_str = 'no', build_follow_list = false, altCaptcha = null){
 		const formData 	= new FormData();
+		const captchaId = altCaptcha || this.currentCaptcha;
+		const secret 	= this.getInvoiceSecret(captchaId);
+		console.log(alias, unfollow_str, build_follow_list, altCaptcha, captchaId, secret);
 		formData.append('verified_username_follow',	alias);
 		formData.append('unfollow', unfollow_str);
-		formData.append('captcha_id', this.currentCaptcha);
-		formData.append('secret', this.getInvoiceSecret(this.currentCaptcha));
+		formData.append('captcha_id',captchaId);
+		formData.append('secret', secret);
 		const server_url = this.getSetting('server_url');
 		if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
 			this.feed('Server URL not set.', true);
@@ -600,6 +602,7 @@ class AppState {
 		})
 		.then(json => {
 			const data = typeof json == 'string'? JSON.parse(json): json;
+			console.log(data);
 			if(!data || typeof data != 'object'){
 				this.feed('Follow operation failed.', true);
 				return;
@@ -747,6 +750,8 @@ class AppState {
 				targ.animate({opacity: 0}, 200).animate({opacity: 0.7}, 200);
 				this.followUser(targ.data('alias'), targ.data('unfollow'));
 			});
+		}else{
+			link = $(`<span class="chat_info">${alias_str}</span>`);
 		}
 		return link;
 	}
@@ -990,6 +995,7 @@ class AppState {
 		if(this.paused || !threadId) return;
 		this.midRequest = true;
         this.setCurrentThreadID(threadId);
+		this.setCurrentCaptchaFromSelector();
 		$('.thread').remove(); // hide all threads
 		$('#create_thread_options').css({display: 'none'});
 		const lastChat 	= $('.chat').not('.cross_post').last();
@@ -1040,6 +1046,8 @@ class AppState {
 			}
 			if (data.error) {
 				this.feed(data.error, true);
+				this.skipFeed = true;
+				this.getThreads();
 				return;
 			}
 			if(startMode) this.feed(data?.msg || 'Thread loaded.');
@@ -1165,6 +1173,7 @@ class AppState {
 		this.midRequest = true;
 		this.lastThreadLoaded = null;
 		this.loadingMsg('Fetching Threads');
+		this.setCurrentCaptchaFromSelector();
 		this.setCurrentThreadID(null);
 		this.clearChatCloneContainer();
 		$('#scroll_to_bottom_container').add('#exit_thread_container').add('#create_thread_options').add('#spend_form').css('display','none');
@@ -1369,19 +1378,15 @@ class AppState {
 	}
 
 	updateCurrentMetadata(metadata){
-		console.log(metadata);
 		this.state.currentMetadata = (metadata && typeof metadata == 'object')? JSON.parse(JSON.stringify(metadata)): {};
-		console.log(this.state.currentMetadata);
 		this.saveState();
 	}
 
-	updateConversionRates(){
+	updateConversionRates(){ // TODO: Update this so it uses BTC -OR- the crypto code of the current wallet.
 		if(this.paused) return;
-		
 		const server_url = this.getSetting('server_url');
 		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')) return;
-		const conversionRateURL = `${server_url}/static/btc_rate_current.json`
-
+		const conversionRateURL = `${server_url}/static/btc_rate_current.json`;
 		// Get the refresh rate
 		if(!conversionRateURL){
 			this.feed('No conversion rate URL set.', true);
@@ -1393,34 +1398,61 @@ class AppState {
 				return;
 			}
 			this.conversionRates = data;
-			const conversionRateIndicator = document.getElementById('conversion_rate');
-			if(conversionRateIndicator){
-				const cryptoPrice = this.satoshiToFiatStr(this.cryptoToSatoshi(1));
-				conversionRateIndicator.textContent = `1 ₿ = ${cryptoPrice}`;
+			var crypto_code = 'BTC'; // default behavior
+			const captcha_id = this.getSelectedWalletID();
+			if(captcha_id && captcha_id in this.state.invoices){
+				const wallet = this.state.invoices[captcha_id];
+				if(wallet && typeof wallet == 'object' && 'crypto_currency' in wallet && typeof wallet.crypto_currency == 'string'){
+					crypto_code = wallet.crypto_currency + '';
+				}
 			}
+			const cryptoPrice 	= this.satoshiToFiatStr(this.cryptoToSatoshi(1,crypto_code),crypto_code);
+			const cryptoSymbol 	= this.cryptoSymbol(crypto_code);
+			$('#conversion_rate').empty().append(`1 ${cryptoSymbol} = ${cryptoPrice}`);
 			this.loadWalletSelector();
 		});
 	}
 
-	satoshiToCrypto(satoshi){
+	// NOTE: In CatsUpNorth jargon, satoshi is the smallest unit of a bitcoin OR other crypto (could be stand in for piconero, etc.)
+	// The satsFactor function handles smallest unit conversions for different cryptos.
+	// The `crypto_code` argument in other functions is used to determine the conversion factor for the specific crypto.
+	satsFactor(crypto_code = 'BTC'){
+		var factor = 100_000_000; // satoshis per bitcoin
+		switch(crypto_code){
+			case 'XMR': factor = 1_000_000_000_000; break; // piconero per monero
+			default:;
+		}
+		return factor;
+	}
+
+	cryptoSymbol(crypto_code = 'BTC'){
+		var symbol = '₿';
+		switch(crypto_code){
+			case 'XMR': symbol = 'XMR'; break;
+			default:;
+		}
+		return symbol;
+	}
+
+	satoshiToCrypto(satoshi, crypto_code = 'BTC'){
 		if(isNaN(satoshi*1) || satoshi < 1 || satoshi % 1 > 0) return 0;
-		return satoshi / 100_000_000;
+		return satoshi / this.satsFactor(crypto_code);
 	}
 
-	cryptoToSatoshi(crypto_amount){
+	cryptoToSatoshi(crypto_amount, crypto_code = 'BTC'){
 		if(isNaN(crypto_amount*1)) return 0;
-		return Math.floor(crypto_amount * 100_000_000);
+		return Math.floor(crypto_amount * this.satsFactor(crypto_code));
 	}
 
-	cryptoToFiatStr(crypto_amount){
+	cryptoToFiatStr(crypto_amount, crypto_code = 'BTC'){
 		const fiat_code 	= this.getSetting('fiat_code');
 		const curr_char		= this.fiatCodeToSymbol(fiat_code);
-		const sats 			= this.cryptoToSatoshi(crypto_amount);
-		const fiat_amount 	=this.satoshiToFiat(sats).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+		const sats 			= this.cryptoToSatoshi(crypto_amount,crypto_code);
+		const fiat_amount 	=this.satoshiToFiat(sats,crypto_code).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 		return `${curr_char}${fiat_amount}`;
 	}
 
-	fiatToSatoshi(fiat_amount, altFiatCode = null){
+	fiatToSatoshi(fiat_amount, crypto_code = 'BTC', altFiatCode = null){
 		if(isNaN(fiat_amount*1)) return 0;
 		var fiat_code = this.getSetting('fiat_code');
 		if(altFiatCode && typeof altFiatCode == 'string' && altFiatCode.length === 3){
@@ -1428,41 +1460,42 @@ class AppState {
 		}
 		const rate = this.conversionRates.find(rate => rate.code === fiat_code);
 		if(!rate || !rate.rate || isNaN(rate.rate*1)) return 0;
-		return this.cryptoToSatoshi(fiat_amount / rate.rate);
+		return this.cryptoToSatoshi(fiat_amount / rate.rate,crypto_code);
 	}
 
-	satoshiToFiat(satoshi, altFiatCode = null){
+	satoshiToFiat(satoshi, crypto_code = 'BTC', altFiatCode = null){
 		if(isNaN(satoshi*1) || satoshi % 1 > 0) return 0;
 		var fiat_code = this.getSetting('fiat_code');
 		if(altFiatCode && typeof altFiatCode == 'string' && altFiatCode.length === 3){
 			fiat_code = altFiatCode;
 		}
-		const rate = this.conversionRates.find(rate => rate.code === fiat_code);
+		const rate = this.conversionRates.find(rate => rate.code === fiat_code && rate.cryptoCode === crypto_code);
 		if(!rate || !rate.rate || isNaN(rate.rate*1)) return 0;
-		const fiat_amount = (satoshi / 100_000_000) * rate.rate;
+		const fiat_amount = (satoshi / this.satsFactor(crypto_code)) * rate.rate;
 		return fiat_amount;
 	}
 
-	fiatToCryptoStr(fiat_amount){
-		return this.satoshiToCrypto(this.fiatToSatoshi(fiat_amount)) + " ₿";
+	fiatToCryptoStr(fiat_amount, crypto_code = 'BTC'){
+		return this.satoshiToCrypto(this.fiatToSatoshi(fiat_amount,crypto_code)) + " " + this.cryptoSymbol(crypto_code);
 	}
 
-	fiatToSatoshiStr(fiat_amount){
-		return this.fiatToSatoshi(fiat_amount) + " sats";
+	fiatToSatoshiStr(fiat_amount, cryptp_code = 'BTC'){
+		return this.fiatToSatoshi(fiat_amount,cryptp_code);
 	}
 
-	satoshiToCryptoStr(satoshi){
-		return this.satoshiToCrypto(satoshi) + " ₿";
+	satoshiToCryptoStr(satoshi, crypto_code = 'BTC'){
+		return this.satoshiToCrypto(satoshi,crypto_code) + " " + this.cryptoSymbol(crypto_code);
 	}
 
-	satoshiToFiatStr(satoshi){
+	satoshiToFiatStr(satoshi, crypto_code = 'BTC'){
 		const fiat_code = this.getSetting('fiat_code');
 		if (!fiat_code) return "---";
 		const curr_char		= this.fiatCodeToSymbol(fiat_code);
 		var curr_accuracy 	= 2; // TODO: Add special cases for certain fiat codes
-		return curr_char + this.satoshiToFiat(satoshi).toLocaleString(undefined, { minimumFractionDigits: curr_accuracy, maximumFractionDigits: curr_accuracy });
+		return curr_char + this.satoshiToFiat(satoshi,crypto_code).toLocaleString(undefined, { minimumFractionDigits: curr_accuracy, maximumFractionDigits: curr_accuracy });
 	}
 
+	// the last two currency functions do not need a crypto_code argument because they are fiat only
 	fiatStrFormatted(fiat_amount){
 		const fiat_code = this.getSetting('fiat_code');
 		if (!fiat_code) return "---";
@@ -1470,7 +1503,6 @@ class AppState {
 		var curr_accuracy 	= 2; // TODO: Add special cases for certain fiat codes
 		return curr_char + fiat_amount.toLocaleString(undefined, { minimumFractionDigits: curr_accuracy, maximumFractionDigits: curr_accuracy });
 	}
-
 	fiatCodeToSymbol(fiat_code){
 		var curr_char 		= fiat_code + '';
 		switch(fiat_code){
@@ -1638,6 +1670,77 @@ class AppState {
         form.appendChild(submitButton);
     }
 
+	loadChannelSelector(){// fetch the channels for verified users.
+		$('#create_thread_channel_selector').off().empty().append('<option value="">Select Channel</option>');
+		if(!this.currentCaptcha || typeof this.currentCaptcha != 'string' || this.currentCaptcha.toLowerCase().trim() == 'free') return;
+
+		// Make sure the user is verified
+		const alias = this.state.invoices[this.currentCaptcha]?.alias || null;
+		if(!alias || typeof alias != 'string' || !alias.startsWith('$')) return;
+
+		const formData = new FormData();
+		formData.append('captcha_id', this.currentCaptcha);
+		formData.append('secret', app.getInvoiceSecret(this.currentCaptcha));
+		const server_url = app.getSetting('server_url');
+		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+			app.feed('No server URL set.', true);
+			return;
+		}
+		const getChannelsEndpoint = `${server_url}/get_my_channels`;
+		fetch(getChannelsEndpoint, {
+			method: 'POST',
+			body: formData
+		})
+		.then(response => {
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
+			}
+		})
+		.then(json => {
+			const data = typeof json == 'string'? JSON.parse(json): json;
+			if(!data || typeof data != 'object'){
+				app.feed('Server response parse failed.', true);
+				return;
+			}
+			const channels = data?.channels || [];
+			const channelSelector = $('#create_thread_channel_selector');
+			if(channels.length > 0){
+				channelSelector.empty().append(`<option value="">Select Channel - ${channels.length}</option>`);
+				channels.forEach((channel) => {
+					if(!channel || typeof channel != 'object' || !channel.channel || typeof channel.channel != 'string') return;
+					channelSelector.append(`<option value="${channel.channel}">${channel.channel}</option>`);
+				});
+				channelSelector.on('change', (e) => {
+					const targ = $(e.currentTarget);
+					const channel = targ.val();
+					if(channel && typeof channel == 'string' && channel.length > 0){
+						$('#thread_channel').val(channel);
+					}
+				});
+				$('#my_channel_options').slideDown(200);
+			}else{
+				$('#my_channel_options').slideUp(200);
+			}
+		});
+	}
+
+	getSelectedWalletID(){
+		return $('#wallet_selector').val();
+	}
+
+	setCurrentCaptchaFromSelector(){
+		const selectedWalletID = this.getSelectedWalletID();
+		if(selectedWalletID === 'free'){
+			this.currentCaptcha = 'free';
+			this.feed('Free Chat Mode Enabled');
+		}else{
+			this.currentCaptcha = selectedWalletID;
+		}
+		this.saveState();
+	}
+
 	loadWalletSelector(){
 		const currentCaptcha		= this.currentCaptcha;
 		const previouslySelected 	= $('#wallet_selector').val();
@@ -1648,14 +1751,14 @@ class AppState {
 			$('#wallet_selector').empty();
 			const server_url 			= this.getSetting('server_url');
 			for (var i=0; i<sortedInvoices.length; i++){
-				var captchaId 	= sortedInvoices[i];
-				var invoice 	= this.state.invoices[captchaId];
+				const captchaId 	= sortedInvoices[i];
+				const invoice 	= this.state.invoices[captchaId];
 				if(invoice.server_url !== server_url) continue; // skip invoices for other servers
 				var balance 	= (invoice.balance && !isNaN(invoice.balance))? invoice.balance: 0;
 				if(balance < 1) continue; // skip empty wallets
 				var captchaName = captchaId.substring(0, 8) + '...';
 				if(invoice?.alias) captchaName = invoice.alias.toString();
-				const option 	= $(`<option value="${captchaId}">${String(balance)}  |  ${this.satoshiToFiatStr(balance)}  |  ${captchaName}</option>`);
+				const option 	= $(`<option value="${captchaId}">${String(balance)}  |  ${this.satoshiToFiatStr(balance,invoice?.crypto_currency)}  |  ${captchaName}</option>`);
 				if((currentCaptcha && currentCaptcha === captchaId) || (previouslySelected && previouslySelected === captchaId)){
 					option.attr('selected', 'selected');
 				}
@@ -1670,68 +1773,26 @@ class AppState {
 			$('#wallet_selector').off().on('change', (e) => {
 				const targ 			= $(e.currentTarget);
 				this.currentCaptcha = targ.val();
-				if(!this.currentCaptcha || typeof this.currentCaptcha != 'string' || this.currentCaptcha.toLowerCase().trim() == 'free') return; 
 
-				// Make sure the user is verified
-				const alias = this.state.invoices[this.currentCaptcha]?.alias || null;
-				if(!alias || typeof alias != 'string' || !alias.startsWith('$')) return;
-
-				// fetch the channels for this account.
-				const formData = new FormData();
-				formData.append('captcha_id', this.currentCaptcha);
-				formData.append('secret', app.getInvoiceSecret(this.currentCaptcha));
-				const server_url = app.getSetting('server_url');
-				if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
-					app.feed('No server URL set.', true);
-					return;
+				// Reload the thread or get threads again when user changes wallet.
+				// This allows the follow links to update.
+				if(this.currentThreadID){
+					this.loadThread(this.currentThreadID);
+				}else{
+					this.getThreads();
+					if($('#chat_input').val().trim().length > 0){
+						setTimeout(() => $('#chat_input').trigger('keyup'), 200); // User is changing wallets while typing.
+					}
 				}
-				const getChannelsEndpoint = `${server_url}/get_my_channels`;
-				fetch(getChannelsEndpoint, {
-					method: 'POST',
-					body: formData
-				})
-				.then(response => {
-					if (response.ok) {
-						return response.text();
-					} else {
-						throw new Error('Network response was not ok');
-					}
-				})
-				.then(json => {
-					const data = typeof json == 'string'? JSON.parse(json): json;
-					if(!data || typeof data != 'object'){
-						app.feed('Server response parse failed.', true);
-						return;
-					}
-					const channels = data?.channels || [];
-					const channelSelector = $('#create_thread_channel_selector');
-					channelSelector.off();
-					if(channels.length > 0){
-						channelSelector.empty().append(`<option value="">Select Channel - ${channels.length}</option>`);
-						channels.forEach((channel) => {
-							channelSelector.append(`<option value="${channel}">${channel}</option>`);
-						});
-						channelSelector.on('change', (e) => {
-							const targ = $(e.currentTarget);
-							const channel = targ.val();
-							if(channel && typeof channel == 'string' && channel.length > 0){
-								$('#thread_channel').val(channel);
-							}
-						});
-						$('#my_channel_options').slideDown(200);
-					}else{
-						$('#my_channel_options').slideUp(200);
-					}
-				});
+				this.updateConversionRates();
+				// verified users only
+				this.loadChannelSelector();
 			});
-			$('#wallet_selector').trigger('change');
+			setTimeout(()=>{this.loadChannelSelector}, 150);
+			setTimeout(()=>{this.setCurrentCaptchaFromSelector}, 200);
 		}catch(e){
 			console.error(e);
 		}
-	}
-
-	getSelectedWalletID(){
-		return $('#wallet_selector').val();
 	}
 
 	getSelectedWalletBalance(){
@@ -1787,7 +1848,6 @@ class AppState {
         var invoiceDivs = [];
 		for (var i=0; i<date_sorted_invoice_keys.length; i++){
 			var name = date_sorted_invoice_keys[i];
-
 			total_invoices++;
 
 			// We only want invoices for the current server
@@ -1797,20 +1857,23 @@ class AppState {
 
 			server_invoices++;
 
-			const invoice = JSON.parse(JSON.stringify(this.state.invoices[name]));
+			const invoice 		= JSON.parse(JSON.stringify(this.state.invoices[name]));
 			// Create a div for each invoice
-			const alias = invoice?.alias || null;
+			const crypto_code 	= invoice?.crypto_currency || '???';
+			const alias 		= invoice?.alias || null;
 			const use_name      = alias? alias: name.substring(0, 8);
             const inv_link      = invoice.link? `<a href="${invoice.link}" target="_blank">${this.heroicon('clipboard-document').outerHTML}&nbsp;Invoice Link</a>`: 'No invoice link';
-			const pay_class     = this.cryptoToSatoshi(invoice.btc_paid)? 'paid': 'unpaid';
+			const pay_class     = this.cryptoToSatoshi(invoice.btc_paid, invoice?.crypto_currency)? 'paid': 'unpaid';
             const bal_class     = invoice.balance > 0? 'balance': 'no_balance';
 			const invoiceDiv    = $(
                 `<div class="card invoice" data-captcha-id="${name}" data-date-created="${invoice.created}" data-balance="${invoice.balance}">` + 
-                    `<a class="invoice_server_link" href="${invoice.server_url}" target="_blank">${invoice.server_url.replace('https://','').replace('http://','')}</a><br>` +
+					`<span style="font-weight:900;font-size:2em;opacity:0.4;">${crypto_code}</span><br>` + 
+					`<a class="invoice_server_link" href="${invoice.server_url}" target="_blank">${invoice.server_url.replace('https://','').replace('http://','')}</a><br>` +
+					`<input type="checkbox" class="wallet_checkbox" data-captcha-id="${name}" style="display:inline-block;width:auto;">` + 
                     `<strong class="${bal_class} alias_strong" style="font-size:1.6em;">${use_name}</strong><br>` +
                     `Rate Quote: ${invoice.rate_quote} sat${( invoice.rate_quote == 1? '': 's' )}<br>` +
-                    `Payment: <span class="${pay_class}">${invoice.btc_paid} (${this.cryptoToFiatStr(invoice.btc_paid)})</span><br>` +
-                    `Balance: <span class="${bal_class}">${invoice.balance} sat${( invoice.balance == 1? '': 's' )} (${this.satoshiToFiatStr(invoice.balance)})</span><br>` +
+                    `Payment: <span class="${pay_class}">${invoice.btc_paid} (${this.cryptoToFiatStr(invoice.btc_paid,invoice?.crypto_currency)})</span><br>` +
+                    `Balance: <span class="${bal_class}">${this.satoshiToCryptoStr(invoice.balance,invoice?.crypto_currency)} (${this.satoshiToFiatStr(invoice.balance,invoice?.crypto_currency)})</span><br>` +
                     `Created: ${invoice.created}<br>` +
                     inv_link + 
                 `</div>`
@@ -1849,79 +1912,103 @@ class AppState {
 
 			// Request payout link
 			const payoutLink = $(`<a href="#" data-captcha-id="${name}" class="invoice_payout_link pull-right" title="Request a payout for this invoice">${this.heroicon('arrow-down-on-square').outerHTML}&nbsp;Withdraw</a>`);
+			const payoutForm = $(
+				`<form class="invoice_payout_form" data-captcha-id="${name}" style="display:none;">
+					<strong style="font-size:1.4em;">Request Payout</strong><br><br>
+					<label for="send_to_address">Receiving Address:</label><br>
+					<input type="text" name="send_to_address" placeholder="${crypto_code} Address" style="width:100%;"><br><br>
+					<label for="fiat_withdraw">Amount:</label><br>
+					$<input type="number" step="0.01" class="fiat_withdraw" name="fiat_withdraw" placeholder="Amount to withdraw" style="width:60%;">
+					<a class="payout_max">${this.heroicon('bolt').outerHTML} Max</a>
+					<input type="hidden" name="captcha_id" value="${name}">
+					<br><br>
+					<input type="number" class="satoshi_to_withdraw" name="satoshi_to_withdraw" value="0">
+					<br><br>
+					<input type="submit" value="Request Payout">
+					<br><br>
+					&nbsp;<a class="payout_cancel faded pull-right">${this.heroicon('x-mark').outerHTML} Cancel</a>
+				</form>`);
 			payoutLink.click((e) => {
 				e.preventDefault();
 				// Get the captcha ID from the clicked element
 				const targ 			= $(e.currentTarget);
 				const captchaId 	= targ.attr('data-captcha-id');
-				const secret 		= this.state.invoices[captchaId]?.secret || null;
-                if(!secret){
-                    this.feed('No secret found for this invoice.', true);
-                    return;
-                }
-				const sentToAddress = prompt('Enter the BTC address to send the funds to:');
-				if (!sentToAddress){
-					this.feed("Action Cancelled.");
-					return;
-				};
-				if(typeof sentToAddress !== 'string' || sentToAddress.trim().length < 26){
-					this.feed("BTC receiving address must be at least 26 characters.");
-					return;
+				const form 			= $(`.invoice_payout_form[data-captcha-id="${captchaId}"]`);
+				if(form.length > 0){
+					form.slideToggle(200,function(){
+						$(this).find('.payout_max').off().on('click', (e) => {
+							e.preventDefault();
+							try{
+								const inv = app.state.invoices[captchaId];
+								const max = inv?.balance || 0;
+								form.find('input[name="fiat_withdraw"]').val(app.satoshiToFiatStr(max,inv?.crypto_currency));
+								form.find('input[name="satoshi_to_withdraw"]').val(max);
+							}catch(e){
+								app.feed(e,true);
+							}
+						});
+						$(this).find('.payout_cancel').off().on('click', (e) => {
+							e.preventDefault();
+							$(this).slideUp(200);
+						});
+						$(this).find('.fiat_withdraw').off().on('keyup', (e) => {
+							e.preventDefault();
+							const targ = $(e.currentTarget);
+							const val = targ.val();
+							const inv = app.state.invoices[captchaId];
+							const sats = app.fiatToSatoshi(val,inv?.crypto_currency);
+							$(this).parent().find('input[name="satoshi_to_withdraw"]').val(sats);
+						});
+						$(this).find('.satoshi_to_withdraw').off().on('keyup', (e) => {
+							e.preventDefault();
+							const targ = $(e.currentTarget);
+							const val = targ.val();
+							const inv = app.state.invoices[captchaId];
+							const fiat = app.satoshiToFiat(val,inv?.crypto_currency);
+							$(this).parent().find('input[name="fiat_withdraw"]').val(fiat);
+						});
+						$(this).off().on('submit', (e) => {
+							e.preventDefault();
+							const formData = new FormData(e.currentTarget);
+							const captchaId = formData.get('captcha_id');
+							const secret = app.getInvoiceSecret(captchaId);
+							formData.append('secret', secret);
+							const server_url = app.getSetting('server_url');
+							if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+								app.feed('No server URL set.', true);
+								return;
+							}
+							const payoutEndpoint = `${server_url}/get_funds`;
+							fetch(payoutEndpoint, {
+								method: 'POST',
+								body: formData
+							})
+							.then(response => {
+								form.slideUp(200);
+								if (response.ok) {
+									return response.text();
+								} else {
+									throw new Error('Network response was not ok');
+								}
+							})
+							.then(json => {
+								const data = typeof json == 'string'? JSON.parse(json): json;
+								if(!data || typeof data != 'object'){
+									app.feed('Server response parse failed.', true);
+									return;
+								}
+								if(data.error){
+									app.feed(data.error, true);
+								}else if(data.msg){
+									app.feed(data.msg);
+									$('.invoice_payout_form').slideUp(300,function(){
+										app.buildWalletForm();
+									});
+								}
+							});
+						});
+					});
 				}
-				const server_url = this.getSetting('server_url');
-				if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
-					this.feed('No server URL set.', true);
-					return;
-				}
-				const payoutEndpoint = `${server_url}/get_funds`;
-				const formData = new FormData();
-				formData.append('captcha_id', captchaId);
-				formData.append('secret', secret);
-				formData.append('send_to_address', sentToAddress.trim());
-				// Send the POST request to redeem the invoice
-				fetch(payoutEndpoint, {
-					method: 'POST',
-					body: formData
-				})
-				.then(response => {
-					
-					if (response.ok) {
-						return response.text();
-					} else {
-						throw new Error('Network response was not ok');
-					}
-				})
-				.then(json => {
-					
-					const data = typeof json == 'string'? JSON.parse(json): json;
-					if(!data || typeof data != 'object'){
-						this.feed('Server response parse failed.', true);
-						return;
-					}
-					if(data.error){
-						this.feed(data.error, true);
-						return;
-					}
-					if(data.msg) this.feed(data.msg);
-					const req = data.payout_request;
-					if(
-						!req || typeof req != 'object' || 
-						!("satoshi_withdrawal" in req) || !req.satoshi_withdrawal || isNaN(req.satoshi_withdrawal*1) ||
-						!("send_to_address" in req) || !req.send_to_address || typeof req.send_to_address != 'string' || req.send_to_address.length < 26 || 
-						!("btcpay_id" in req) || !req.btcpay_id || typeof req.btcpay_id != 'string' || req.btcpay_id.length < 3
-					){
-						this.feed('There was a problem with the payout request.', true);
-						return;
-					}
-					req.satoshi_withdrawal = req.satoshi_withdrawal*1;
-					this.state.invoices[captchaId].payout_requests = data.payout_requests || [];
-					this.state.invoices[captchaId].payout_requests.push(req);
-					this.redeemInvoice(captchaId);
-				})
-				.catch(error => {
-					this.feed('There has been a problem with your fetch operation. See console.', true);
-					console.error(error);
-				});
 			});
 
 			const verifyLink = $(`<a href="#" class="invoice_verify_link" data-captcha-id="${name}" title="Get a verified username for this virtual wallet">&nbsp;&nbsp;${this.heroicon('pencil').outerHTML}</a>`);
@@ -1940,14 +2027,15 @@ class AppState {
 				$('.invoice_verification_cancel_link').remove();
 				const cancelIcon = this.heroicon('x-mark').outerHTML || '❌';
 				const cancelVerificationLink = $(
-					`<a href="#" class="invoice_verification_cancel_link faded" style="display:inline-block;margin-bottom:15px;margin-left:15px;">
+					`<a href="#" class="invoice_verification_cancel_link faded pull-right" style="display:inline-block;margin-bottom:15px;margin-left:15px;">
 						${cancelIcon}&nbsp;&nbsp;<span style="font-style:italic;">Cancel</span>
 					</a>`
 				);
 				cancelVerificationLink.on('click', (e) => {
 					e.preventDefault();
-					$('.invoice_verification_form').remove();
-					$('.invoice_verification_cancel_link').remove();
+					$('.invoice_verification_form').slideUp(300,function(){
+						$(this).remove();
+					});
 				});
 				const verificationForm = $(
 					`<form class="invoice_verification_form" data-captcha-id="${captchaId}" style="display:none;">
@@ -1970,6 +2058,7 @@ class AppState {
 						<strong class="error">WARNING:</strong> This account will no longer be anonymous after adding a nickname or a verified username. You will need to create/use a different account to post anonymously again.
 					</form>`
 				);
+				verificationForm.append('<br><br>&nbsp;',cancelVerificationLink);
 
 				verificationForm.on('submit', (e) => {
 					e.preventDefault();
@@ -2120,7 +2209,6 @@ class AppState {
 						document.querySelectorAll('.user_verification_fee').forEach((el) => el.textContent = feeStr);
 					});
 				});
-				targ.after(cancelVerificationLink);
 				targ.after(verificationForm);
 				verificationForm.slideDown(200, () => {
 					verificationForm.find('.verification_type').off().on('change', (e) => {
@@ -2136,7 +2224,7 @@ class AppState {
 					});
 				});
 			});
-			if(invoice.balance) invoiceDiv.find('.invoice_server_link').after(payoutLink);
+			if(invoice.balance) invoiceDiv.find('.invoice_server_link').after(payoutLink).after(payoutForm);
 			invoiceDiv.find('.alias_strong').after(verifyLink);
 			invoiceDiv.append('<br>',redeemLink);
 			invoiceDiv.append('<br>',repoElement);
@@ -2216,6 +2304,7 @@ class AppState {
 					currency_pair: 	data?.currency_pair || "...",
 					server_url: 	(this?.state.settings?.server_url || null).toString(),
 					conv_balance:	((data?.exchange_rate || 0) * ((data?.balance || 0) / 100000000)) || 0,
+					crypto_currency: data?.crypto_currency || '???',
 				});
 				this.saveState();
 			}
