@@ -239,7 +239,7 @@ function buildMetaDataForm(){
 					const param_split = param.split('=');
 					const q_key 	= param_split[0];
 					const q_val 	= param_split[1];
-					const x_icon 	= app.heroicon('trash-solid').outerHTML || '❌';
+					const x_icon 	= app.heroicon('trash-solid') || '❌';
 					const q_kill	= $(`<a href="#" style="font-size:1.1em;" data-query-key="${q_key}" class="error pull-right">${x_icon}</a>`);
 					q_kill.on('click', function(){
 						const q_key = $(this).attr('data-query-key');
@@ -256,7 +256,7 @@ function buildMetaDataForm(){
 					inp.find('tbody').append(qtr);
 				}
 				inp.find('tbody').append(`<tr>
-					<td class="chat_info faded" style="text-align:right;opacity:0.6;" colspan="3">Remove trackers ${app.heroicon('arrow-turn-right-up').outerHTML}</td>
+					<td class="chat_info faded" style="text-align:right;opacity:0.6;" colspan="3">Remove trackers ${app.heroicon('arrow-turn-right-up')}</td>
 				</tr>`);
 			}else{
 				inp = `<span class="chat_info success">${val}</span><br>`;
@@ -304,6 +304,10 @@ function buildMetaDataForm(){
 	}
 	updateURLTable();
 };
+
+function hideNavs(){
+	$('.internal_nav').not('#nav-close').slideUp(200);
+}
 	
 $('document').ready(function(){
 
@@ -312,10 +316,12 @@ $('document').ready(function(){
 	$('#version_str').text(app.version);
 	$('#nav_opener').on('click', function(){ 
 		if(app) app.getThreads(); // turn off the chat polling.
+		$('.internal_nav').show();
 		$('#nav_dropdown').fadeToggle(200); 
 	});
-	$('#nav-buy').on('click', function(){ app.buildWalletForm(); });
-	$('#nav-follows').on('click', function(){ app.buildFollowList(); });
+	$('#nav-buy').on('click', function(){ hideNavs(); app.buildWalletForm(); });
+	$('#nav-follows').on('click', function(){ hideNavs(); app.buildFollowList(); });
+	$('#nav-settings').on('click', function(){ hideNavs(); app.buildSettingsForm(); });
 	$('#nav-close').on('click', function(){
 		$('#nav_dropdown').hide(300,function(){
 			$('#form_container').empty().hide();
@@ -385,7 +391,7 @@ $('document').ready(function(){
 			return;
 		}
 		$('#spend_sat').val(sats);
-		const star 		= app.heroicon('star-solid').outerHTML || '⭐';
+		const star 		= app.heroicon('star-solid') || '⭐';
 		$('#spend_desc').empty().append(`${star} ${app.fiatStrFormatted(v)} ${star} ${app.satoshiToCryptoStr(sats)} ${star}`);
 		if(event.key === 'Enter') $('#send_link').trigger('click');
 	});
@@ -406,7 +412,7 @@ $('document').ready(function(){
 			return;
 		}
 		$('#spend_input').val(app.satoshiToFiat(sats));
-		const star 		= app.heroicon('star-solid').outerHTML || '⭐';
+		const star 		= app.heroicon('star-solid') || '⭐';
 		$('#spend_desc').empty().append(`${star} ${app.satoshiToFiatStr(sats)} ${star} ${app.satoshiToCryptoStr(sats)} ${star}`);
 		if(event.key === 'Enter') $('#send_link').trigger('click');
 	});

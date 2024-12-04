@@ -11,34 +11,36 @@ class AppState {
 		this.threadIdCacheFC	= null; // Used to save the last chat sent for when users are doing a free chat.
 		this.newPassCacheFC		= null; // Used to save the last chat sent for when users are doing a free chat.
 		this.settingsDefault 	= {
-		    server_url:            			"https://catsupnorth.com", // fallback server url
-			refresh_threads_microseconds:	60_000, // 1 minute
-			refresh_chat_microseconds:		1000, // 0.5 seconds
-			url_preview_max_len: 			40,
-			min_spend_threshold: 			1,
-			fiat_code: 						'USD',
-			ignore_free_threads: 			false,
-			ignore_free_chats: 				false,
+		    server_url:				"https://catsupnorth.com", // fallback server url
+			fiat_code:				'USD',
+			hide_free_threads:		false,
+			hide_free_chats:		false,
+			show_crypto_balance:	false,
+			show_sats_balance:		true,
+			show_fiat_balance:		true,
+			show_conversions:		[ "BTC_USD", "XMR_USD" ]
 		};
         this.settingsSchema 	= {
-            server_url:            			'string',
-            refresh_threads_microseconds:	'number',
-            refresh_chat_microseconds:		'number',
-            url_preview_max_len: 			'number',
-            min_spend_threshold: 			'number',
-            fiat_code: 						'string',
-            ignore_free_threads: 			'boolean',
-            ignore_free_chats: 				'boolean',
+            server_url:				'string',
+            fiat_code:				'string',
+            hide_free_threads:		'boolean',
+            hide_free_chats:		'boolean',
+			show_crypto_balance:	'boolean',
+			show_sats_balance:		'boolean',
+			show_fiat_balance:		'boolean',
+			show_conversions:		'array'
         };
 		this.settingsLimits 	= {
-			refresh_threads_microseconds: 	[2500, 60000], // 2.5 seconds to 60 seconds
-			refresh_chat_microseconds: 		[550, 5000],  // 0.55 seconds to 5 seconds
+			refresh_threads_microseconds: 	[ 2500, 60000 ], // 2.5 seconds to 60 seconds
+			refresh_chat_microseconds: 		[ 550,  5000  ],  // 0.55 seconds to 5 seconds
 		};
 		this.skipFeed 			= false; // skip feed message if true only once (set back to false just before feed method exits early)
 		this.skipAutoScroll 	= false; // skip autoscroll if user is scrolling up in the chat.
 		this.currentCaptcha 	= null;
 		this.transactionCaptcha	= null; // set to captchaId when user initiates a super chat or a verified username purchase.
 		this.followSearch		= null;
+		this.followAlias		= null;
+		this.unfollowStr		= null;
 		this.newMessages 		= 0;
 		this.conversionRates 	= [];
 		this.midRequest 		= false;
@@ -82,13 +84,11 @@ class AppState {
 
 	pause() {
 		this.paused = this.paused? false: true;
-		const pause_link = document.getElementById('pause');
-		if (pause_link) pause_link.style.opacity = this.paused? '1': '0.5';
 	}
 
 	// Load the state from chrome.storage.local
 	loadState() {
-		chrome.storage.local.get(['invoices', 'current_user_url', 'settings'], (result) => {
+		chrome.storage.local.get(['invoices', 'current_user_url', 'settings', 'currentCaptcha'], (result) => {
 			if (chrome.runtime.lastError) {
 				console.error('Error loading state:', chrome.runtime.lastError);
 				return;
@@ -96,11 +96,13 @@ class AppState {
 			this.state.invoices 		= result.invoices 			|| {};
 			this.state.current_user_url = result.current_user_url 	|| '';
 			this.state.settings 		= result.settings 			|| {};
+			this.state.currentCaptcha 	= result.currentCaptcha 	|| null;
 
 			if (Object.keys(this.state.settings).length < Object.keys(this.settingsDefault).length) {
 				this.state.settings = JSON.parse(JSON.stringify(this.settingsDefault));
 			}
 
+			this.currentCaptcha = this.state.currentCaptcha || null;
 			if(!this.currentCaptcha) this.currentCaptcha = Object.keys(this.state.invoices)[0] || null;
 
 			this.updateConversionRates();
@@ -133,6 +135,9 @@ class AppState {
 			}
 		}
 
+		// Save currentCaptcha to state for use when the extension is re-opened.
+		this.state.currentCaptcha = this.currentCaptcha + '';
+
 		chrome.storage.local.set(this.state, () => {
 			if (chrome.runtime.lastError) {
 				console.error('Error saving state:', chrome.runtime.lastError);
@@ -141,8 +146,7 @@ class AppState {
 
 		const server_url = this.getSetting('server_url');
 		if(!server_url || typeof server_url != 'string' || server_url.length < 1) return;
-		document.getElementById('server_link').href 		= server_url + '';
-		document.getElementById('server_link').textContent 	= server_url.replace(/https?:\/\//, '');
+		$('#server_link').prop('href',server_url).empty().append(server_url.replace(/https?:\/\//, ''));
 	}
 
 	cachePass(thread_id, pass) { // TODO: Create a modal with input masking
@@ -323,8 +327,8 @@ class AppState {
 		this.currentCaptcha 	= captcha_id;
 		this.newPassCacheFC 	= password;
 
-		document.querySelectorAll('.superchat_input').forEach(   (input) => { input.value = ''; } );
-		document.querySelectorAll('.superchat_satoshi').forEach( (input) => { input.value = 0;  } );
+		$('.superchat_input').val('');
+		$('.superchat_satoshi').val(0);
 		const currentURL 	= this.getCurrentURL();
 		const server_url 	= this.getSetting('server_url');
 		if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
@@ -400,6 +404,12 @@ class AppState {
 						<input type="submit" value="Submit">
 					</form>`
 				);
+				const cancelIcon = this.heroicon('x-mark') || '❌';
+				const captchaCancel = $(`<a href="#" class="cancel_free_chat">${cancelIcon} Cancel</a>`);
+				captchaCancel.on('click', (event) => {
+					event.preventDefault();
+					$('#captcha_form_container').remove();
+				});
 				captchaForm.on('submit', (event) => {
 					event.preventDefault();
 					const formData = new FormData(event.currentTarget);
@@ -427,7 +437,7 @@ class AppState {
 					}
 					const freeChatEndpoint = `${server_url}/send_chat_free`;
 					// delete free_chat_captcha_form
-					document.querySelectorAll('.free_chat_captcha_form').forEach((form) => { form.remove(); });
+					$('.free_chat_captcha_form').remove();
 					fetch(freeChatEndpoint, {
 						method: 'POST',
 						body: formData
@@ -452,6 +462,11 @@ class AppState {
 						} else {
 							const msg = data?.msg || 'Message sent.';
 							this.feed(msg);
+							if(this.currentThreadID){
+								this.loadThread(this.currentThreadID);
+							}else{
+								this.getThreads();
+							}
 						}
 						this.clearChatCloneContainer(true);
 					})
@@ -464,8 +479,9 @@ class AppState {
 					});
 				});
 				$('#send_link').hide();
-				$('#captcha_form_container').empty().append(captchaForm).slideDown(200);
-				captchaForm.find('.free_chat_human_guess').focus();
+				$('#captcha_form_container').empty().append(captchaForm,'<br>',captchaCancel).slideDown(200,function(){
+					$('.free_chat_human_guess').focus();
+				});
 			}
 
 			this.skipFeed = true;
@@ -483,8 +499,9 @@ class AppState {
 	}
 
 	isFollowing(alias){
+		const selectedWalletID = this.getSelectedWalletID();
 		try{
-			const invoice = this.state.invoices?.[this.currentCaptcha];
+			const invoice = this.state.invoices?.[selectedWalletID];
 			const follows = invoice?.follows || [];
 			return follows.indexOf(alias) > -1;
 		}catch(e){
@@ -495,7 +512,18 @@ class AppState {
 	
 	updateFollowList(captchaId = null, build_follow_list = false){
 		if(this.paused) return;
-		this.followSearch = captchaId;
+		if(captchaId.toLowerCase() == 'free'){
+			// refresh the page
+			if(this.currentThreadID){
+				this.loadThread(this.currentThreadID,null,true);
+			}else{
+				this.getThreads();
+			}
+			return;
+		}
+		this.followSearch = captchaId + '';
+		
+		console.log(this.followSearch,this.getInvoiceSecret(captchaId));
 		const formData = new FormData();
 		formData.append('captcha_id', captchaId);
 		formData.append('secret', this.getInvoiceSecret(captchaId));
@@ -518,20 +546,15 @@ class AppState {
 		})
 		.then(json => {
 			const data = typeof json == 'string'? JSON.parse(json): json;
+			this.followSearch = this.followSearch || this.currentCaptcha;
 			const invoice = this.followSearch in this.state.invoices? this.state.invoices[this.followSearch]: null;
 			if(invoice) invoice.follows = data?.follows || [];
 			this.saveState();
-			$('.follow_link').each((i, el) => {
-				const alias = $(el).data('alias');
-				const iFollow = invoice.follows.indexOf(alias) > -1;
-				$(el)
-					.empty()
-					.append(iFollow? this.heroicon('minus').outerHTML: this.heroicon('plus').outerHTML, `&nbsp;${alias}`)
-					.attr('title', (iFollow? 'Unfollow': 'Follow'))
-					.data('unfollow', (iFollow? 'yes': 'no'))
-					.removeClass('following');
-				if(iFollow) $(el).addClass('following');
-			});
+			if(this.currentThreadID){
+				this.loadThread(this.currentThreadID,null,true);
+			}else{
+				this.getThreads();
+			}
 			if(build_follow_list) this.buildFollowList();
 		})
 		.catch(error => {
@@ -548,8 +571,17 @@ class AppState {
 			$('#form_container').append('<p><strong>ERROR:</strong> Server URL not set.</p>');
 			return;
 		}
+		$('#form_container').append(serverURL);
+		var followCount = 0;
 		for(let captchaId in this.state.invoices){
 			const invoice = this.state.invoices[captchaId];
+
+			// Skip invoices that don't have follows
+			if(!('follows' in invoice) || !invoice.follows || !Array.isArray(invoice.follows) || invoice.follows.length < 1) continue;
+
+			// skip invoices that are not on this server
+			if(invoice.server_url != serverURL) continue;
+
 			var captchaName = captchaId.substring(0, 8) + '...';
 			if('alias' in invoice && invoice.alias && typeof invoice.alias == 'string' && invoice.alias.length > 0) captchaName = invoice.alias;
 			const userFollows = invoice?.follows || [];
@@ -559,11 +591,11 @@ class AppState {
 			const followList = $('<ul class="follow_ul"></ul>');
 			for(var i=0; i<followCount; i++){
 				const u = userFollows[i];
-				const unfollow_link = $(`<a href="#" class="unfollow_link error" data-alt-captcha="${captchaId}" data-alias="${u}" title="Unfollow this user">${this.heroicon('user-minus').outerHTML} Unfollow</a>`);
+				const unfollow_link = $(`<a href="#" class="unfollow_link error" data-alt-captcha="${captchaId}" data-alias="${u}" title="Unfollow this user">${this.heroicon('user-minus')} Unfollow</a>`);
 				unfollow_link.on('click', (event) => {
 					const targ = $(event.currentTarget);
 					targ.animate({opacity: 0}, 200).animate({opacity: 1}, 200);
-					this.followUser(targ.data('alias'), 'yes', true, targ.data('alt-captcha'));
+					this.followUser(targ.data('alias'), 'yes', true, targ.attr('data-alt-captcha'));
 				});
 				const user_page_link = $(`<a class="follow_item" href="${serverURL}/u/${u}" title="Visit this user's page." target="_blank">${u}&nbsp;&nbsp;</a>`);
 				const li = $('<li></li>');
@@ -572,18 +604,23 @@ class AppState {
 			}
 			$('#form_container').append(followList);
 		}
+		if(followCount < 1){
+			$('#form_container').append('<p>No follows found.</p>');
+		}
 	}
 
 	followUser(alias, unfollow_str = 'no', build_follow_list = false, altCaptcha = null){
-		const formData 	= new FormData();
-		const captchaId = altCaptcha || this.currentCaptcha;
-		const secret 	= this.getInvoiceSecret(captchaId);
-		console.log(alias, unfollow_str, build_follow_list, altCaptcha, captchaId, secret);
+		const formData 		= new FormData();
+		const captchaId 	= altCaptcha || this.getSelectedWalletID();
+		const secret 		= this.getInvoiceSecret(captchaId);
+		const server_url 	= this.getSetting('server_url');
+		this.followSearch 	= captchaId + '';
+		this.followAlias 	= alias + '';
+		this.unfollowStr 	= unfollow_str + '';
 		formData.append('verified_username_follow',	alias);
 		formData.append('unfollow', unfollow_str);
 		formData.append('captcha_id',captchaId);
 		formData.append('secret', secret);
-		const server_url = this.getSetting('server_url');
 		if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
 			this.feed('Server URL not set.', true);
 			return;
@@ -602,7 +639,6 @@ class AppState {
 		})
 		.then(json => {
 			const data = typeof json == 'string'? JSON.parse(json): json;
-			console.log(data);
 			if(!data || typeof data != 'object'){
 				this.feed('Follow operation failed.', true);
 				return;
@@ -611,8 +647,28 @@ class AppState {
 				this.feed(data.error, true);
 			} else {
 				this.feed(data.msg);
-				this.updateFollowList(this.currentCaptcha, build_follow_list); // Fetches my follows from the server and saves state.
 			}
+			const invoice = this.state.invoices?.[this.followSearch];
+			if(invoice && this.followAlias && typeof this.followAlias == 'string' && this.followAlias.length > 0){
+				const follow_links = $(`.follow_link[data-alias="${this.followAlias}"]`);
+				follow_links.find('svg').remove();
+				if(this.unfollowStr == 'yes'){
+					while(invoice.follows.indexOf(this.followAlias) > -1){
+						invoice.follows.splice(invoice.follows.indexOf(this.followAlias),1);
+					}
+					follow_links.attr('title','Follow this user').attr('data-unfollow','no').prepend(this.heroicon('plus'));
+				}else{
+					if(invoice.follows.indexOf(this.followAlias) < 0) invoice.follows.push(this.followAlias);
+					follow_links.attr('title','Unfollow this user').attr('data-unfollow','yes').prepend(this.heroicon('minus'));
+				}
+				this.saveState();
+			}
+			if(build_follow_list){
+				this.updateFollowList(this.followSearch, build_follow_list); // Fetches my follows from the server and saves state.
+			}
+			this.followSearch 	= null;
+			this.followAlias 	= null;
+			this.unfollowStr 	= null;
 		})
 		.catch(error => {
 			this.feed('Follow operation failed on server end.', true);
@@ -658,11 +714,11 @@ class AppState {
 		container.append(
 			`<span class="reaction_link_span pull-right">
 				<a href="#" class="reaction_button like_button" data-chat-id="${chat_id}" style="padding-right:3px;padding-left:3px;">
-					${this.heroicon('chevron-up').outerHTML}
+					${this.heroicon('chevron-up')}
 					<span class="reaction_count like_count" data-chat-id="${chat_id}">0</span>
 				</a>
 				<a href="#" class="reaction_button dislike_button" data-chat-id="${chat_id}" style="padding-left:3px;">
-					${this.heroicon('chevron-down').outerHTML}
+					${this.heroicon('chevron-down')}
 					<span class="reaction_count dislike_count" data-chat-id="${chat_id}">0</span>
 				</a>
 			</span>`
@@ -671,7 +727,7 @@ class AppState {
 
 		// Cross-posting and replies
 		var crossPostLink = $(`<a href="#" class="cross_post_link" data-chat-id="${chat_id}" title="Cross-Post chat to another thread."></a>`);
-		crossPostLink.append(this.heroicon('arrows-right-left').outerHTML || '⇄');
+		crossPostLink.append(this.heroicon('arrows-right-left') || '⇄');
 		crossPostLink.off('click').on('click', (event) => {
 			event.preventDefault();
 			$('.reply_link').add('.cross_post_link').removeClass('active');
@@ -687,7 +743,7 @@ class AppState {
 			crossPostClone.find('.cross_post_link').remove();
 			crossPostClone.find('.reply_link').remove();
 			crossPostClone.find('.reply_container').remove();
-			const cancelIcon = this.heroicon('x-mark').outerHTML || '❌';
+			const cancelIcon = this.heroicon('x-mark') || '❌';
 			const cancelLink = $(`<a href="#" class="cancel_cross_post pull-right faded" title="Cancel Cross-Post">${cancelIcon}&nbsp;Cancel Cross-Post</a>`);
 			cancelLink.on('click', (event) => {
 				event.preventDefault();
@@ -697,7 +753,7 @@ class AppState {
 		});
 		var replyLink = $(`<a href="#" class="reply_link chat_reply_link" data-chat-id="${chat_id}" title="Reply to chat."></a>`);
 		replyLink.append(
-			(this.heroicon('chat-bubble-bottom-center').outerHTML || '💬'),
+			(this.heroicon('chat-bubble-bottom-center') || '💬'),
 			`<span class="chat_reply_count" data-chat-id="${chat_id}" style="padding-left:4px;"></span>`
 		);
 		replyLink.off('click').on('click', (event) => {
@@ -719,7 +775,7 @@ class AppState {
 			replyToClone.find('.reply_link').remove();
 			replyToClone.find('.reaction_link_span').remove();
 			replyToClone.find('.reply_container').remove();
-			const cancelIcon = this.heroicon('x-mark').outerHTML || '❌';
+			const cancelIcon = this.heroicon('x-mark') || '❌';
 			const cancelLink = $(`<a href="#" class="cancel_reply_to pull-right faded" title="Cancel Reply">${cancelIcon}&nbsp;Cancel Reply</a>`);
 			cancelLink.on('click', (event) => {
 				event.preventDefault();
@@ -739,16 +795,18 @@ class AppState {
 			link = $('<span class="chat_info faded" style="font-style:italic;">free user</span>');
 		}else if(alias_str.startsWith('$')){
 			const iFollow		= this.isFollowing(alias_str);
-			const followIcon	= iFollow? this.heroicon('minus').outerHTML: this.heroicon('plus').outerHTML;
+			const followIcon	= iFollow? this.heroicon('minus'): this.heroicon('plus');
 			const unfollowStr	= iFollow? 'yes': 'no';
 			const verb			= iFollow? 'Unfollow': 'Follow';
-			link				= $(`<a href="#" title="${verb}" class="follow_link${( iFollow? ' following' : '' )}" data-alias="${alias_str}" data-unfollow="${unfollowStr}">${followIcon}&nbsp;${alias_str}</a>`);
+			link				= $(`<a href="#" title="${verb}" class="follow_link" data-alias="${alias_str}" data-unfollow="${unfollowStr}">${followIcon}&nbsp;${alias_str}</a>`);
 			link.click((event) => {
 				event.preventDefault();
 				if(this.paused) return;
 				const targ = $(event.currentTarget);
-				targ.animate({opacity: 0}, 200).animate({opacity: 0.7}, 200);
-				this.followUser(targ.data('alias'), targ.data('unfollow'));
+				const alias_str = targ.attr('data-alias');
+				const unfollow = targ.attr('data-unfollow');
+				this.followUser(alias_str, unfollow);
+				targ.animate({opacity: 0}, 50).animate({opacity: 0.7}, 300);
 			});
 		}else{
 			link = $(`<span class="chat_info">${alias_str}</span>`);
@@ -760,7 +818,7 @@ class AppState {
 		var link = '';
 		if(alias && typeof alias == 'string' && alias.startsWith('$')){
 			const server_url 	= this.getSetting('server_url');
-			const icon			= this.heroicon('arrow-top-right-on-square').outerHTML || '⎘';
+			const icon			= this.heroicon('arrow-top-right-on-square') || '⎘';
 			if(server_url) link = `<a href="${server_url}/u/${alias}" target="_blank" class="chat_info" title="Go to this user's page.">${icon}</a>`;
 		}
 		return link;
@@ -913,7 +971,7 @@ class AppState {
 	}
 
     setCurrentThreadID(threadId = null){
-		this.clearSearch();
+		// this.clearSearch();
         this.currentThreadID = (threadId && !isNaN(threadId*1))? threadId*1: null;
     }
 
@@ -989,15 +1047,16 @@ class AppState {
 		});
 	}
 
-	loadThread(threadId = null, password = null){
+	loadThread(threadId = null, password = null, force_restart = false){
 		if(!threadId || isNaN(threadId*1)) threadId = this.getCurrentThreadID();
-
 		if(this.paused || !threadId) return;
 		this.midRequest = true;
         this.setCurrentThreadID(threadId);
 		this.setCurrentCaptchaFromSelector();
 		$('.thread').remove(); // hide all threads
+		$('#chat_input').attr('placeholder','Chat in this thread...');
 		$('#create_thread_options').css({display: 'none'});
+		if(force_restart) $('.chat').remove(); // clear all chats
 		const lastChat 	= $('.chat').not('.cross_post').last();
 		const startMode = lastChat.length > 0? false: true;
 		if(startMode && threadId != this.lastThreadLoaded){
@@ -1062,11 +1121,15 @@ class AppState {
 				return 0;
 			});
 
+			const hide_free_chats = this.getSetting('hide_free_chats');
+
 			threadChats.forEach( chat => {
 				const isMe 		= chat?.is_me || false;
 				const isFree 	= chat?.is_free || false;
 				const isTop 	= (!chat.reply_to_id && chat.thread_id == threadId)? true: false;
 				const isSuper	= (chat.superchat && !isNaN(chat.superchat*1) && chat.superchat > 0)? true: false;
+
+				if(hide_free_chats && isFree) return; // Do not add free chats if setting is enabled
 
 				// Do not add chats that are already in the thread
 				if($(`.chat[data-id="${chat.chat_id}"]`).length > 0) return; // chat already rendered, skip
@@ -1091,7 +1154,7 @@ class AppState {
 					chatDivClasses.push('superchat');
 					const fiatStr 	= this.satoshiToFiatStr(chat.superchat);
 					const cryptoStr = this.satoshiToCryptoStr(chat.superchat);
-					const star 		= this.heroicon('star-solid').outerHTML || '⭐';
+					const star 		= this.heroicon('star-solid') || '⭐';
 					superChatStr 	= `<div class="superchat_amount">${star}&nbsp;&nbsp;${fiatStr}&nbsp;&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;${star}</div>`;
 				}
 				chatDivClasses = chatDivClasses.join(' ');
@@ -1173,6 +1236,7 @@ class AppState {
 		this.midRequest = true;
 		this.lastThreadLoaded = null;
 		this.loadingMsg('Fetching Threads');
+		$('#chat_input').attr('placeholder','Create a new thread on this page...');
 		this.setCurrentCaptchaFromSelector();
 		this.setCurrentThreadID(null);
 		this.clearChatCloneContainer();
@@ -1223,10 +1287,11 @@ class AppState {
 					return;
 				}
 				const server_url = this.getSetting('server_url');
+				const hide_free_threads = this.getSetting('hide_free_threads');
 				threads.forEach( thread => {
 					const isMe = thread?.is_me || false;
 					const isFree = thread?.is_free || false;
-
+					if(hide_free_threads && isFree) return; // Do not add free threads if setting is enabled
 					const threadDiv = $('<div class="thread' + (isFree? ' free_thread': '') + '' + (isMe? ' my_thread': '') + '"></div>');
 					threadDiv.append(this.createFollowLink(thread.alias, isMe, isFree),'&nbsp;&nbsp;',this.createUserPageLink(thread.alias));
 					if(server_url && thread.alias && thread.alias.startsWith('$')){
@@ -1236,7 +1301,7 @@ class AppState {
 					}
 					threadDiv.append('<br>');
 					
-					const password_xml = thread.password_required? this.heroicon('lock-closed').outerHTML + '&nbsp;': '';
+					const password_xml = thread.password_required? this.heroicon('lock-closed') + '&nbsp;': '';
 					// const loadThreadLink = $(
 					// 	`<a class="thread_opener" data-thread-id="${thread.thread_id}">
 					// 		<span style="font-size:9px;opacity:0.6;">
@@ -1258,11 +1323,10 @@ class AppState {
 						const ctarg 	= $(e.currentTarget);
 						const threadId 	= ctarg.attr('data-thread-id');
 						if(ctarg.hasClass('password_required')){
-							const existingPassForm = document.querySelector('.thread_pass_form[data-thread-id="' + threadId + '"]');
-							if(existingPassForm){ // user decides not to join thread
+							const existingPassForm = $(`.thread_pass_form[data-thread-id="${threadId}"]`);
+							if(existingPassForm.length > 0){ // user decides not to join thread by clicking again
 								// remove all existing pass forms
-								const passForms = document.querySelectorAll('.thread_pass_form');
-								passForms.forEach((passForm) => passForm.remove());
+								$('.thread_pass_form').remove();
 								return;
 							}
 							const cachedPass = this.getCachedPass(threadId);
@@ -1353,8 +1417,11 @@ class AppState {
 		}
 	}
 
-	getSetting(key) {
-		return this.state.settings?.[key] || this.settingsDefault[key] || null;
+	getSetting(key){
+		if('settings' in this.state && this.state.settings && typeof this.state.settings == 'object' && key in this.state.settings){
+			return this.state.settings[key];
+		}
+		return this.settingsDefault[key] || null;
 	}
 
 	getCurrentURL() {
@@ -1382,6 +1449,29 @@ class AppState {
 		this.saveState();
 	}
 
+	displayConversionRates(){
+		var conversion_strings = [];
+		const show_conv = this.getSetting('show_conversions');
+		for(var i=0; i<this.conversionRates.length; i++){
+			try{
+				const conv = this.conversionRates[i];
+				const pair = conv?.currencyPair;
+				if(!pair || typeof pair != 'string' || show_conv.indexOf(pair) < 0) continue;
+				const code = conv?.code;
+				const cryp = conv?.cryptoCode;
+				const csym = this.cryptoSymbol(cryp);
+				const rate = conv?.rate;
+				const symb = this.fiatCodeToSymbol(code);
+				const prc  = rate? rate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }): null;
+				if(prc) conversion_strings.push(`${csym}&nbsp;${symb}${prc}`);
+			}catch(e){
+				console.error(e);
+				continue;
+			}
+		}
+		$('#conversion_rate').empty().append(conversion_strings.join('&nbsp;&nbsp;&nbsp;<span style="opacity:0.4;">|</span>&nbsp;&nbsp;&nbsp;'));
+	}
+
 	updateConversionRates(){ // TODO: Update this so it uses BTC -OR- the crypto code of the current wallet.
 		if(this.paused) return;
 		const server_url = this.getSetting('server_url');
@@ -1398,17 +1488,7 @@ class AppState {
 				return;
 			}
 			this.conversionRates = data;
-			var crypto_code = 'BTC'; // default behavior
-			const captcha_id = this.getSelectedWalletID();
-			if(captcha_id && captcha_id in this.state.invoices){
-				const wallet = this.state.invoices[captcha_id];
-				if(wallet && typeof wallet == 'object' && 'crypto_currency' in wallet && typeof wallet.crypto_currency == 'string'){
-					crypto_code = wallet.crypto_currency + '';
-				}
-			}
-			const cryptoPrice 	= this.satoshiToFiatStr(this.cryptoToSatoshi(1,crypto_code),crypto_code);
-			const cryptoSymbol 	= this.cryptoSymbol(crypto_code);
-			$('#conversion_rate').empty().append(`1 ${cryptoSymbol} = ${cryptoPrice}`);
+			this.displayConversionRates();
 			this.loadWalletSelector();
 		});
 	}
@@ -1426,9 +1506,9 @@ class AppState {
 	}
 
 	cryptoSymbol(crypto_code = 'BTC'){
-		var symbol = '₿';
+		var symbol = this.heroicon('btc') || '₿';
 		switch(crypto_code){
-			case 'XMR': symbol = 'XMR'; break;
+			case 'XMR': symbol = this.heroicon('xmr') || 'XMR'; break;
 			default:;
 		}
 		return symbol;
@@ -1488,7 +1568,7 @@ class AppState {
 	}
 
 	satoshiToFiatStr(satoshi, crypto_code = 'BTC'){
-		const fiat_code = this.getSetting('fiat_code');
+		const fiat_code 	= this.getSetting('fiat_code');
 		if (!fiat_code) return "---";
 		const curr_char		= this.fiatCodeToSymbol(fiat_code);
 		var curr_accuracy 	= 2; // TODO: Add special cases for certain fiat codes
@@ -1580,51 +1660,76 @@ class AppState {
 		}
 		return curr_char;
 	}
+
+	getConversionPairs(){
+		var conversion_pairs = [];
+		for(var i=0; i<this.conversionRates.length; i++){
+			const conv = this.conversionRates[i];
+			const pair = conv?.currencyPair;
+			if(pair && typeof pair == 'string' && pair.length > 0){
+				conversion_pairs.push(pair);
+			}
+		}
+		return conversion_pairs;
+	}
 	
-	rebuildSettingsForm() {
-        const form = document.getElementById('settings_form');
-		if(!form) return;
-        form.innerHTML = ''; // Clear the form
+	buildSettingsForm() {
+        $('#nav-close').show(300);
+		$('#form_container').empty().append('<h2>Extension Settings</h2>');
+
+		// Create
+		const cancelIcon = this.heroicon('x-mark') || '❌';
+		const buyFormCancel = $(`<a href="#" id="cancel_buy_wallet" class="pull-right faded" title="Cancel Wallet Creation">${cancelIcon}&nbsp;Cancel</a>`);
+		buyFormCancel.on('click', (e) => {
+			e.preventDefault();
+			$('.buy_form_container').slideUp(200);
+		});
 
 		// Get alpha sorted keys from this.state.settings
 		const sortedKeys = Object.keys(this.settingsDefault).sort();
 
+		const settingsForm = $(`<form></form>`);
+
         for (var i=0; i<sortedKeys.length; i++) {
 			const key  	= sortedKeys[i];
-            const label = document.createElement('label');
-            label.textContent = key.replace(/_/g, ' ').toUpperCase();
-            form.appendChild(label);
 
             let input;
-            if (typeof this.settingsDefault[key] === 'boolean') {
-                input = document.createElement('select');
-                ['true', 'false'].forEach(optionValue => {
-                    const option = document.createElement('option');
-                    option.value = optionValue;
-                    option.text = optionValue.charAt(0).toUpperCase() + optionValue.slice(1);
-                    if (String(this.state.settings?.[key]) === optionValue) {
-                        option.selected = true;
-                    }
-                    input.appendChild(option);
-                });
-            } else {
-                input = document.createElement('input');
-                input.type = typeof this.settingsDefault[key] === 'number' ? 'number' : 'text';
-				if(input.type == 'number' && key in this.settingsLimits){
-					const limits = this.settingsLimits[key];
-					input.min = limits[0];
-					input.max = limits[1];
+            if (typeof this.settingsDefault[key] === 'boolean') { // checkbox
+				const is_true = key in this.state.settings? this.state.settings[key]: this.settingsDefault[key];
+				const checked = is_true? ' checked': '';
+				input = $(`<input type="checkbox" name="${key}"${checked}>&nbsp;<label for="${key}">${key.replace(/_/g, ' ').toUpperCase()}</label><br><br>`);
+            } else if(Array.isArray(this.settingsDefault[key])){ // checkboxes
+				settingsForm.append(`<br><label for="${key}">${key.replace(/_/g, ' ').toUpperCase()}</label><br>`);
+				input = $(`<div style="font-size:0.8em;" class="checkbox_group" name="${key}"></div>`);
+				var checkbox_options = [];
+				switch(key){
+					case 'show_conversions':
+						checkbox_options = this.getConversionPairs();
+						break;
+					default:;
 				}
-                input.value = this.state.settings?.[key] || this.settingsDefault[key];
+				for(var j=0; j<checkbox_options.length; j++){
+					const opt = checkbox_options[j];
+					const checked = this.state.settings?.[key]?.includes(opt)? ' checked': '';
+					const checkbox = $(`<input type="checkbox" name="${key}" value="${opt}"${checked}>`);
+					checkbox.prop('checked',this.state.settings?.[key]?.includes(opt) || false);
+					input.append(checkbox,opt,'<br>');
+				}
+				input.append('<br><br>');
+			} else {
+				settingsForm.append(`<br><label for="${key}">${key.replace(/_/g, ' ').toUpperCase()}</label><br>`);
+                const typ = typeof this.settingsDefault[key] === 'number' ? 'number' : 'text';
+				const val = this.state.settings?.[key] || this.settingsDefault[key];
+				input = $(`<input type="${typ}" name="${key}" value="${val}"><br><br>`);
             }
-            input.name = key;
-            form.appendChild(input);
-
+            settingsForm.append(input);
+			
 			if(key == 'server_url'){
 				// Get all server_urls from invoices in this.state.invoices
 				var server_urls = [];
+				var v = this.state.settings?.[key] || this.settingsDefault[key];
 				for (let name in this.state.invoices) {
-					if(this.state.invoices[name].server_url && typeof this.state.invoices[name].server_url == 'string'){
+					if(this.state.invoices[name].server_url && typeof this.state.invoices[name].server_url == 'string' && this.state.invoices[name].server_url.length > 0 && this.state.invoices[name].server_url != v){
 						server_urls.push(this.state.invoices[name].server_url);
 					}
 				}
@@ -1632,42 +1737,45 @@ class AppState {
 				server_urls = [...new Set(server_urls)].sort();
 				// Add a button to set the input value to each of the available server_urls
 				server_urls.forEach(server_url => {
-					const urlset = document.createElement('a');
-					urlset.textContent = `Set to ${server_url}`;
-					urlset.addEventListener('click', () => {
+					const urlset = $(`<a>Set to ${server_url}</a>`);
+					urlset.textContent = ``;
+					urlset.on('click', (e) => {
+						e.preventDefault();
 						input.value = server_url;
 					});
-					form.appendChild(urlset);
-					form.appendChild(document.createElement('br'));
+					settingsForm.append(urlset,'<br>');
 				});
-				form.appendChild(document.createElement('br'));
-				form.appendChild(document.createElement('br'));
-			}else if(key == 'fiat_code'){
-				// Get all fiat_codes from conversion rates
-				const fiat_codes = this.conversionRates.map(rate => rate.code).sort();
-				// Add a button to set the input value to each of the available fiat_codes
-				fiat_codes.forEach(fiat_code => {
-					const fiatCodeSet = document.createElement('a');
-					fiatCodeSet.textContent = fiat_code;
-					fiatCodeSet.style.paddingRight = '5px';
-					fiatCodeSet.style.paddingLeft = '5px';
-					fiatCodeSet.style.cursor = 'pointer';
-					fiatCodeSet.addEventListener('click', () => {
-						input.value = fiat_code;
-					});
-					form.appendChild(fiatCodeSet);
-				});
-				form.appendChild(document.createElement('br'));
-				form.appendChild(document.createElement('br'));
+				settingsForm.append('<br>');
 			}
         }
 
-        // Add the submit button
-        const submitButton = document.createElement('button');
-        submitButton.type = 'submit';
-		submitButton.classList.add('submit_settings_button');
-        submitButton.textContent = 'Save Settings';
-        form.appendChild(submitButton);
+		// append submit button
+		settingsForm.append(`<br><br><input type="submit" value="Save Settings"><br><br>`);
+		settingsForm.on('submit', (e) => {
+			e.preventDefault();
+			for(var key in this.settingsDefault){
+				const input = settingsForm.find(`[name="${key}"]`);
+				if(input.length < 1) continue;
+				const val = input.val();
+				if(Array.isArray(this.settingsDefault[key])){
+					const checkedBoxes = input.find('input[type="checkbox"]:checked');
+					const checkedValues = [];
+					checkedBoxes.each((i, el) => {
+						checkedValues.push($(el).val());
+					});
+					this.updateSettings({[key]: checkedValues});
+				}else if(this.settingsSchema?.[key] == 'boolean'){
+					this.updateSettings({[key]: input.is(':checked')});
+				}else{
+					this.updateSettings({[key]: val});
+				}
+			}
+			this.saveState();
+			this.updateConversionRates();
+			$('#nav-close').trigger('click');
+		});
+		$('#form_container').append(settingsForm);
+		$('#form_container').slideDown(200);
     }
 
 	loadChannelSelector(){// fetch the channels for verified users.
@@ -1727,7 +1835,7 @@ class AppState {
 	}
 
 	getSelectedWalletID(){
-		return $('#wallet_selector').val();
+		return $('#wallet_selector').val() || $('#wallet_selector').find('option').first().val();
 	}
 
 	setCurrentCaptchaFromSelector(){
@@ -1744,6 +1852,9 @@ class AppState {
 	loadWalletSelector(){
 		const currentCaptcha		= this.currentCaptcha;
 		const previouslySelected 	= $('#wallet_selector').val();
+		const show_crypto_balance	= this.getSetting('show_crypto_balance');
+		const show_sats_balance		= this.getSetting('show_sats_balance');
+		const show_fiat_balance		= this.getSetting('show_fiat_balance');
 		// sort invoices by balance in decending order
 		try{
 			const sortedInvoices 		= Object.keys(this.state.invoices || {}).sort((a, b) => this.state.invoices[b].balance - this.state.invoices[a].balance );
@@ -1752,13 +1863,20 @@ class AppState {
 			const server_url 			= this.getSetting('server_url');
 			for (var i=0; i<sortedInvoices.length; i++){
 				const captchaId 	= sortedInvoices[i];
-				const invoice 	= this.state.invoices[captchaId];
+				const invoice 		= this.state.invoices[captchaId];
 				if(invoice.server_url !== server_url) continue; // skip invoices for other servers
-				var balance 	= (invoice.balance && !isNaN(invoice.balance))? invoice.balance: 0;
-				if(balance < 1) continue; // skip empty wallets
-				var captchaName = captchaId.substring(0, 8) + '...';
+				if(!invoice.balance || isNaN(invoice.balance*1) || invoice.balance < 1) continue; // skip empty wallets
+				var balance_strings = [];
+				const crypto_code	= invoice?.crypto_currency || 'BTC';
+				if(show_crypto_balance) balance_strings.push(this.satoshiToCryptoStr(invoice.balance,crypto_code) + ' ' + crypto_code);
+				if(show_sats_balance) 	balance_strings.push((invoice.balance*1).toLocaleString('en-US'));
+				if(show_fiat_balance) 	balance_strings.push(this.satoshiToFiatStr(invoice.balance,crypto_code));
+				var captchaName 	= captchaId.substring(0, 8) + '...';
 				if(invoice?.alias) captchaName = invoice.alias.toString();
-				const option 	= $(`<option value="${captchaId}">${String(balance)}  |  ${this.satoshiToFiatStr(balance,invoice?.crypto_currency)}  |  ${captchaName}</option>`);
+				if(!show_crypto_balance) captchaName += ' - ' + crypto_code;
+				const sep_str 		= '&nbsp;&nbsp;|&nbsp;&nbsp;';
+				const bal_sep 		= balance_strings.length > 0? sep_str + '': '';
+				const option 		= $(`<option value="${captchaId}">${captchaName}${bal_sep}${balance_strings.join(sep_str)}</option>`);
 				if((currentCaptcha && currentCaptcha === captchaId) || (previouslySelected && previouslySelected === captchaId)){
 					option.attr('selected', 'selected');
 				}
@@ -1773,23 +1891,18 @@ class AppState {
 			$('#wallet_selector').off().on('change', (e) => {
 				const targ 			= $(e.currentTarget);
 				this.currentCaptcha = targ.val();
+				this.saveState();
 
 				// Reload the thread or get threads again when user changes wallet.
 				// This allows the follow links to update.
-				if(this.currentThreadID){
-					this.loadThread(this.currentThreadID);
-				}else{
-					this.getThreads();
-					if($('#chat_input').val().trim().length > 0){
-						setTimeout(() => $('#chat_input').trigger('keyup'), 200); // User is changing wallets while typing.
-					}
-				}
+				this.updateFollowList(this.currentCaptcha);
 				this.updateConversionRates();
 				// verified users only
 				this.loadChannelSelector();
 			});
 			setTimeout(()=>{this.loadChannelSelector}, 150);
 			setTimeout(()=>{this.setCurrentCaptchaFromSelector}, 200);
+			setTimeout(()=>{this.displayConversionRates}, 250);
 		}catch(e){
 			console.error(e);
 		}
@@ -1821,7 +1934,7 @@ class AppState {
 			e.preventDefault();
 			this.createWallet($('#buy_val').val(), $('#buy_curr').val());
 		});
-		const cancelIcon = this.heroicon('x-mark').outerHTML || '❌';
+		const cancelIcon = this.heroicon('x-mark') || '❌';
 		const buyFormCancel = $(`<a href="#" id="cancel_buy_wallet" class="pull-right faded" title="Cancel Wallet Creation">${cancelIcon}&nbsp;Cancel</a>`);
 		buyFormCancel.on('click', (e) => {
 			e.preventDefault();
@@ -1831,7 +1944,7 @@ class AppState {
 
         // wallet list
 		const h2 = $('<h2>My&nbsp;Wallets&nbsp;</h2>');
-		const plus = $(`<a href="#" id="add_wallet" title="Add a new wallet">${this.heroicon('plus').outerHTML}</a>`);
+		const plus = $(`<a href="#" id="add_wallet" title="Add a new wallet">${this.heroicon('plus')}</a>`);
 		plus.on('click', (e) => {
 			e.preventDefault();
 			$('.buy_form_container').toggle(200);
@@ -1845,9 +1958,14 @@ class AppState {
 			const dateB = new Date(this.state.invoices[b].created);
 			return dateB - dateA;
 		});
+		const group_sorted_invoice_keys = date_sorted_invoice_keys.sort((a, b) => {
+			const groupA = this.state.invoices[a]?.invoice_group || 0;
+			const groupB = this.state.invoices[b]?.invoice_group || 0;
+			return groupB - groupA;
+		});
         var invoiceDivs = [];
-		for (var i=0; i<date_sorted_invoice_keys.length; i++){
-			var name = date_sorted_invoice_keys[i];
+		for (var i=0; i<group_sorted_invoice_keys.length; i++){
+			var name = group_sorted_invoice_keys[i];
 			total_invoices++;
 
 			// We only want invoices for the current server
@@ -1859,21 +1977,24 @@ class AppState {
 
 			const invoice 		= JSON.parse(JSON.stringify(this.state.invoices[name]));
 			// Create a div for each invoice
-			const crypto_code 	= invoice?.crypto_currency || '???';
+			const crypto_code 	= invoice?.crypto_currency || null;
+			const crypto_symbol = this.cryptoSymbol(crypto_code);
+			const inv_group 	= invoice?.invoice_group || null;
+			const group_str 	= inv_group? `<span class="pull-right" style="font-weight:900;font-size:2em;opacity:0.4;" title="Invoice Group ID (Invoice groups allow you to accept multiple crypto currencies as super chats).">G.${inv_group}</span>`: '';
 			const alias 		= invoice?.alias || null;
 			const use_name      = alias? alias: name.substring(0, 8);
-            const inv_link      = invoice.link? `<a href="${invoice.link}" target="_blank">${this.heroicon('clipboard-document').outerHTML}&nbsp;Invoice Link</a>`: 'No invoice link';
+            const inv_link      = invoice.link? `<a href="${invoice.link}" target="_blank">${this.heroicon('clipboard-document')}&nbsp;Invoice Link</a>`: 'No invoice link';
 			const pay_class     = this.cryptoToSatoshi(invoice.btc_paid, invoice?.crypto_currency)? 'paid': 'unpaid';
             const bal_class     = invoice.balance > 0? 'balance': 'no_balance';
 			const invoiceDiv    = $(
                 `<div class="card invoice" data-captcha-id="${name}" data-date-created="${invoice.created}" data-balance="${invoice.balance}">` + 
-					`<span style="font-weight:900;font-size:2em;opacity:0.4;">${crypto_code}</span><br>` + 
+					`<span style="font-weight:900;font-size:3em;">${crypto_symbol}</span>${group_str}<br>` + 
 					`<a class="invoice_server_link" href="${invoice.server_url}" target="_blank">${invoice.server_url.replace('https://','').replace('http://','')}</a><br>` +
 					`<input type="checkbox" class="wallet_checkbox" data-captcha-id="${name}" style="display:inline-block;width:auto;">` + 
                     `<strong class="${bal_class} alias_strong" style="font-size:1.6em;">${use_name}</strong><br>` +
                     `Rate Quote: ${invoice.rate_quote} sat${( invoice.rate_quote == 1? '': 's' )}<br>` +
                     `Payment: <span class="${pay_class}">${invoice.btc_paid} (${this.cryptoToFiatStr(invoice.btc_paid,invoice?.crypto_currency)})</span><br>` +
-                    `Balance: <span class="${bal_class}">${this.satoshiToCryptoStr(invoice.balance,invoice?.crypto_currency)} (${this.satoshiToFiatStr(invoice.balance,invoice?.crypto_currency)})</span><br>` +
+                    `Balance: <span class="${bal_class}">${this.satoshiToCrypto(invoice.balance,invoice?.crypto_currency)} (${this.satoshiToFiatStr(invoice.balance,invoice?.crypto_currency)})</span><br>` +
                     `Created: ${invoice.created}<br>` +
                     inv_link + 
                 `</div>`
@@ -1881,7 +2002,7 @@ class AppState {
 
 			var repoElement = $('<span class="faded" style="text-decoration:line-through;" title="No recovery phrase found.">Recovery Phrase</span>');
 			if(invoice.repo){
-				repoElement = $(`<a href="#" title="Copy Recovery Phrase to clipboard">${this.heroicon('clipboard-document').outerHTML}&nbsp;Recovery Phrase</a>`);
+				repoElement = $(`<a href="#" title="Copy Recovery Phrase to clipboard">${this.heroicon('clipboard-document')}&nbsp;Recovery Phrase</a>`);
 				repoElement.on('click', (e) => {
 					e.preventDefault();
 					const targ = $(e.currentTarget);
@@ -1891,7 +2012,7 @@ class AppState {
 				});
 			}
 
-			const redeemLink = $(`<a href="#" data-captcha-id="${name}" class="invoice_redeem_link" title="Redeem/Refresh this invoice">${this.heroicon('arrow-path').outerHTML}&nbsp;Update Balance</a>`);
+			const redeemLink = $(`<a href="#" data-captcha-id="${name}" class="invoice_redeem_link" title="Redeem/Refresh this invoice">${this.heroicon('arrow-path')}&nbsp;Update Balance</a>`);
 			redeemLink.click((e) => {
                 e.preventDefault();
                 try{
@@ -1911,7 +2032,7 @@ class AppState {
 			});
 
 			// Request payout link
-			const payoutLink = $(`<a href="#" data-captcha-id="${name}" class="invoice_payout_link pull-right" title="Request a payout for this invoice">${this.heroicon('arrow-down-on-square').outerHTML}&nbsp;Withdraw</a>`);
+			const payoutLink = $(`<a href="#" data-captcha-id="${name}" class="invoice_payout_link pull-right" title="Request a payout for this invoice">${this.heroicon('arrow-down-on-square')}&nbsp;Withdraw</a>`);
 			const payoutForm = $(
 				`<form class="invoice_payout_form" data-captcha-id="${name}" style="display:none;">
 					<strong style="font-size:1.4em;">Request Payout</strong><br><br>
@@ -1919,14 +2040,14 @@ class AppState {
 					<input type="text" name="send_to_address" placeholder="${crypto_code} Address" style="width:100%;"><br><br>
 					<label for="fiat_withdraw">Amount:</label><br>
 					$<input type="number" step="0.01" class="fiat_withdraw" name="fiat_withdraw" placeholder="Amount to withdraw" style="width:60%;">
-					<a class="payout_max">${this.heroicon('bolt').outerHTML} Max</a>
+					<a class="payout_max">${this.heroicon('bolt')} Max</a>
 					<input type="hidden" name="captcha_id" value="${name}">
 					<br><br>
 					<input type="number" class="satoshi_to_withdraw" name="satoshi_to_withdraw" value="0">
 					<br><br>
 					<input type="submit" value="Request Payout">
 					<br><br>
-					&nbsp;<a class="payout_cancel faded pull-right">${this.heroicon('x-mark').outerHTML} Cancel</a>
+					&nbsp;<a class="payout_cancel faded pull-right">${this.heroicon('x-mark')} Cancel</a>
 				</form>`);
 			payoutLink.click((e) => {
 				e.preventDefault();
@@ -2011,7 +2132,7 @@ class AppState {
 				}
 			});
 
-			const verifyLink = $(`<a href="#" class="invoice_verify_link" data-captcha-id="${name}" title="Get a verified username for this virtual wallet">&nbsp;&nbsp;${this.heroicon('pencil').outerHTML}</a>`);
+			const verifyLink = $(`<a href="#" class="invoice_verify_link" data-captcha-id="${name}" title="Get a verified username for this virtual wallet">&nbsp;&nbsp;${this.heroicon('pencil')}</a>`);
 			verifyLink.on('click',(e) => {
 				e.preventDefault();
 				const targ = $(e.currentTarget);
@@ -2025,7 +2146,7 @@ class AppState {
 				}
 				$('.invoice_verification_form').remove();
 				$('.invoice_verification_cancel_link').remove();
-				const cancelIcon = this.heroicon('x-mark').outerHTML || '❌';
+				const cancelIcon = this.heroicon('x-mark') || '❌';
 				const cancelVerificationLink = $(
 					`<a href="#" class="invoice_verification_cancel_link faded pull-right" style="display:inline-block;margin-bottom:15px;margin-left:15px;">
 						${cancelIcon}&nbsp;&nbsp;<span style="font-style:italic;">Cancel</span>
@@ -2171,8 +2292,7 @@ class AppState {
 									select.on('change', (e) => {
 										const targ = $(e.target);
 										const captchaId = targ.attr('data-captcha-id');
-										const input = document.querySelector(`input[name="username_submission"][data-captcha-id="${captchaId}"]`);
-										input.value = e.target.value.replace(/\$/g,'').replace(/_/g,' ');
+										$(`input[name="username_submission"][data-captcha-id="${captchaId}"]`).val(e.target.value.replace(/\$/g,'').replace(/_/g,' '));
 									});
 								});
 							}
@@ -2206,7 +2326,7 @@ class AppState {
 							const fiatStr = this.satoshiToFiatStr(stats, unit);
 							feeStr = `${fiatStr} (${stats} sats)`;
 						}
-						document.querySelectorAll('.user_verification_fee').forEach((el) => el.textContent = feeStr);
+						$('.user_verification_fee').empty().append(feeStr);
 					});
 				});
 				targ.after(verificationForm);
@@ -2224,7 +2344,7 @@ class AppState {
 					});
 				});
 			});
-			if(invoice.balance) invoiceDiv.find('.invoice_server_link').after(payoutLink).after(payoutForm);
+			if(invoice.balance) invoiceDiv.find('.invoice_server_link').after(payoutForm).after(payoutLink);
 			invoiceDiv.find('.alias_strong').after(verifyLink);
 			invoiceDiv.append('<br>',redeemLink);
 			invoiceDiv.append('<br>',repoElement);
@@ -2234,12 +2354,84 @@ class AppState {
 		// Tell users how many invoices they have
         const svr_url = this.getSetting('server_url');
         const ttl_str = total_invoices > server_invoices? `Total Wallets: ${total_invoices}<br>`: '';
-		$('#form_container').append(`${ttl_str}<a href="${svr_url}">${svr_url.replace('https://','')}</a> wallets: ${server_invoices}`);
+		$('#form_container').append(`${ttl_str}<a href="${svr_url}">${svr_url.replace('https://','')}</a> wallets: ${server_invoices}`,'<br>','<div id="wallet_check_options" style="display:none;"></div>');
 
         // Append the invoice divs to #form_container
         invoiceDivs.forEach(div => {
             $('#form_container').append(div);
         });
+
+		$('.wallet_checkbox').off().on('change', (e) => {
+			const check_count = $('.wallet_checkbox:checked').length;
+			if(check_count > 1){
+				const group_btn = $(`<button class="wallet_group_btn">Group ${check_count} Wallets</button>`);
+				group_btn.on('click', (e) => {
+					e.preventDefault();
+					try{
+						var captcha_ids = [], secrets = [];
+						$('.wallet_checkbox:checked').each(function(){
+							const cap = $(this).attr('data-captcha-id');
+							captcha_ids.push(cap);
+							secrets.push(app.getInvoiceSecret(cap));
+						});
+						this.groupCaptchasTmp 	= captcha_ids;
+						const server_url 		= app.getSetting('server_url');
+						const group_endpoint	= `${server_url}/group_invoices`;
+						const formData = new FormData();
+						const joined_ids = captcha_ids.join(',');
+						const joined_secrets = secrets.join(',');
+						formData.append('captcha_ids', joined_ids);
+						formData.append('secrets', joined_secrets);
+						fetch(group_endpoint, {
+							method: 'POST',
+							body: formData
+						})
+						.then(response => {
+							if (response.ok) {
+								return response.text();
+							} else {
+								throw new Error('Network response was not ok');
+							}
+						})
+						.then(json => {
+							const data = typeof json == 'string'? JSON.parse(json): json;
+							if(!data || typeof data != 'object'){
+								app.feed('Server response parse failed.', true);
+								return;
+							}
+							if(data.error){
+								app.feed(data.error, true);
+							}else if(data.msg){
+								app.feed(data.msg);
+								if(data?.group_id && this.groupCaptchasTmp.length > 0){
+									for(var i=0; i<this.groupCaptchasTmp.length; i++){
+										const cap = this.groupCaptchasTmp[i];
+										const inv = app.state.invoices[cap];
+										if(inv) inv.invoice_group = data.group_id*1;
+									}
+									this.saveState();
+									this.groupCaptchasTmp = [];
+								}
+							}
+						})
+						.catch(error => {
+							app.feed('There has been a problem with your fetch operation. See console.', true);
+							console.error(error);
+						})
+						.finally(() => {
+							app.buildWalletForm();
+						});
+					}catch(e){
+						console.error(e);
+					}
+				});
+				$('#wallet_check_options').empty(group_btn).append(group_btn).slideDown(200);
+			}else{
+				$('#wallet_check_options').slideUp(200,function(){
+					$(this).empty();
+				});
+			}
+		});
 
         // Invoice recovery form
         const recoveryForm = $(
@@ -2304,7 +2496,8 @@ class AppState {
 					currency_pair: 	data?.currency_pair || "...",
 					server_url: 	(this?.state.settings?.server_url || null).toString(),
 					conv_balance:	((data?.exchange_rate || 0) * ((data?.balance || 0) / 100000000)) || 0,
-					crypto_currency: data?.crypto_currency || '???',
+					crypto_currency:data?.crypto_currency || '???',
+					invoice_group: 	data?.invoice_group || null,
 				});
 				this.saveState();
 			}
@@ -2321,10 +2514,10 @@ class AppState {
 	}
 
 	heroicon(name) {
-		const svgContainer = document.getElementById('heroicon-' + name);
-		if (svgContainer) {
-			const svg = svgContainer.querySelector('svg');
-			if (svg) return svg.cloneNode(true);
+		const svgContainer = $('#heroicon-' + name);
+		if (svgContainer.length > 0) {
+			const svg = svgContainer.find('svg');
+			if (svg) return svg.prop('outerHTML');
 		}
 		return false;
 	}
