@@ -4,7 +4,7 @@ class AppState {
 		this.version			= '1.0.0';
 		this.paused 			= false;
 		this.convUpdatedAt		= null; // Last time conversion rates were updated in seconds from epoch
-		this.state				= {notifsFetchedAt:null};
+		this.state				= {notifsFetchedAt:null, notifications: []}; // store notifications until users mark read.
 		this.settingsSchema 	= {};
 		this.passCache			= {}; // Password attempts by thread id
 		this.contentCacheFC		= null; // Used to save the last chat sent for when users are doing a free chat.
@@ -1053,11 +1053,12 @@ class AppState {
 		if(!threadId || isNaN(threadId*1)) threadId = this.getCurrentThreadID();
 		if(this.paused || !threadId) return;
 		this.midRequest = true;
-		// Check if the conversion rates are current within the last minute
-		console.log(this.convUpdatedAt,(new Date().getTime() - 60000));
-		if(this.convUpdatedAt && this.convUpdatedAt > (new Date().getTime() - 60000)){
-			this.updateConversionRates();
-		}
+
+		// Check if the conversion rates are current within the last minute (also fetches notifications)
+		const secondsSinceEpoch = Math.round(new Date().getTime() / 1000);
+		const timeSinceConvUpdate = secondsSinceEpoch - this.convUpdatedAt;
+		if(timeSinceConvUpdate > 60) this.updateConversionRates();
+
         this.setCurrentThreadID(threadId);
 		this.setCurrentCaptchaFromSelector();
 		$('.thread').remove(); // hide all threads
@@ -1158,6 +1159,7 @@ class AppState {
 					chatDivClasses.push('hidden_chat');
 				}
 				if(isSuper){
+					console.log('superchat: ', chat);
 					chatDivClasses.push('superchat');
 					const amount 	= chat.superchat*1;
 					const fiatStr 	= this.satoshiToFiatStr(amount, chat?.sender_crypto_type);
@@ -1242,10 +1244,12 @@ class AppState {
 		if(this.paused) return;
 		this.allThreadChatIds = [];
 		this.midRequest = true;
-		// Check if the conversion rates are current within the last minute
-		if(this.convUpdatedAt && this.convUpdatedAt > (new Date().getTime() - 60000)){
-			this.updateConversionRates();
-		}
+
+		// Check if the conversion rates are current within the last minute (also fetches notifications)
+		const secondsSinceEpoch = Math.round(new Date().getTime() / 1000);
+		const timeSinceConvUpdate = secondsSinceEpoch - this.convUpdatedAt;
+		if(timeSinceConvUpdate > 60) this.updateConversionRates();
+
 		this.lastThreadLoaded = null;
 		this.loadingMsg('Fetching Threads');
 		$('#chat_input').attr('placeholder','Create a new thread on this page...');
@@ -1508,7 +1512,6 @@ class AppState {
 		})
 		.then(json => {
 			const data = typeof json == 'string'? JSON.parse(json): json;
-			console.log('notifications: ', data);
 			if(!data || typeof data != 'object'){
 				this.feed('Server response parse failed.', true);
 				return;
@@ -1545,13 +1548,12 @@ class AppState {
 			this.feed('No conversion rate URL set.', true);
 			return;
 		}
-		this.convUpdatedAt = Math.floor(Date.now() / 1000);
+		this.convUpdatedAt = Math.floor(Date.now() / 1000); // time since epoch in seconds
 		$.get(conversionRateURL, (data) => {
 			if(!data || !Array.isArray(data) || data.length < 1){
 				this.feed('Array min length of 1 expected for conversion rates.', true);
 				return;
 			}
-			console.log('conversion rate fetch: ', data);
 			this.conversionRates = data;
 			this.displayConversionRates();
 			this.loadWalletSelector();
