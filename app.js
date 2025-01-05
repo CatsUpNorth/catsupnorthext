@@ -3,7 +3,8 @@ class AppState {
 	constructor() {
 		this.version			= '1.0.0';
 		this.paused 			= false;
-		this.state				= {};
+		this.convUpdatedAt		= null; // Last time conversion rates were updated in seconds from epoch
+		this.state				= {notifsFetchedAt:null};
 		this.settingsSchema 	= {};
 		this.passCache			= {}; // Password attempts by thread id
 		this.contentCacheFC		= null; // Used to save the last chat sent for when users are doing a free chat.
@@ -522,8 +523,6 @@ class AppState {
 			return;
 		}
 		this.followSearch = captchaId + '';
-		
-		console.log(this.followSearch,this.getInvoiceSecret(captchaId));
 		const formData = new FormData();
 		formData.append('captcha_id', captchaId);
 		formData.append('secret', this.getInvoiceSecret(captchaId));
@@ -676,7 +675,7 @@ class AppState {
 		});
 	}
 	
-	reactDiv(chat_id, timestamp = null){ // reply_count is only used by threads.
+	reactDiv(chat_id, timestamp = null, sender_crypto_wallets = null){ // reply_count is only used by threads.
 		const container = $('<span class="reaction_container"></span>');
 		var date_str = '';
 		if(timestamp && typeof timestamp == 'string' && timestamp.length > 0){
@@ -709,6 +708,9 @@ class AppState {
 				date_str = timestamp.split(" ");
 				date_str = date_str.length > 5? date_str[0] + ' ' + date_str[1] + ' ' + date_str[2] + ' ' + date_str[3] + ' ' + date_str[5]: date_str.join(" ");
 			}
+		}
+		if(sender_crypto_wallets && typeof sender_crypto_wallets == 'string' && sender_crypto_wallets.length > 0){
+			container.append(`&nbsp;<span style="opacity:0.4;font-weight:600;font-size:0.7em;">${sender_crypto_wallets}</span>`);
 		}
 		container.append(`<span class="time_info">&nbsp;${date_str}</span>&nbsp;`);
 		container.append(
@@ -1051,6 +1053,11 @@ class AppState {
 		if(!threadId || isNaN(threadId*1)) threadId = this.getCurrentThreadID();
 		if(this.paused || !threadId) return;
 		this.midRequest = true;
+		// Check if the conversion rates are current within the last minute
+		console.log(this.convUpdatedAt,(new Date().getTime() - 60000));
+		if(this.convUpdatedAt && this.convUpdatedAt > (new Date().getTime() - 60000)){
+			this.updateConversionRates();
+		}
         this.setCurrentThreadID(threadId);
 		this.setCurrentCaptchaFromSelector();
 		$('.thread').remove(); // hide all threads
@@ -1152,10 +1159,11 @@ class AppState {
 				}
 				if(isSuper){
 					chatDivClasses.push('superchat');
-					const fiatStr 	= this.satoshiToFiatStr(chat.superchat);
-					const cryptoStr = this.satoshiToCryptoStr(chat.superchat);
+					const amount 	= chat.superchat*1;
+					const fiatStr 	= this.satoshiToFiatStr(amount, chat?.sender_crypto_type);
+					const cryptoStr = this.satoshiToCryptoStr(amount, chat?.sender_crypto_type);
 					const star 		= this.heroicon('star-solid') || '⭐';
-					superChatStr 	= `<div class="superchat_amount">${star}&nbsp;&nbsp;${fiatStr}&nbsp;&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;${star}</div>`;
+					superChatStr 	= `<div class="superchat_amount">${star}&nbsp;${star}&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;${fiatStr}&nbsp;&nbsp;${star}&nbsp;${star}&nbsp;${star}</div>`;
 				}
 				chatDivClasses = chatDivClasses.join(' ');
 				const chatDiv = $(
@@ -1164,7 +1172,7 @@ class AppState {
 					</div>`
 				);
 				chatDiv.append(this.createFollowLink(chat.alias,isMe,isFree),'&nbsp;&nbsp;',this.createUserPageLink(chat.alias),'&nbsp;&nbsp;',chatStr);
-				chatDiv.append(this.reactDiv(chat.chat_id,chat.date_submitted));
+				chatDiv.append(this.reactDiv(chat.chat_id,chat.date_submitted, chat?.sender_crypto_wallets));
 				// check if cross post
 				if(chat.thread_id != threadId){
 					const shortURL 		= chat.url.length < 30? chat.url: chat.url.substring(0,30) + '...';
@@ -1234,6 +1242,10 @@ class AppState {
 		if(this.paused) return;
 		this.allThreadChatIds = [];
 		this.midRequest = true;
+		// Check if the conversion rates are current within the last minute
+		if(this.convUpdatedAt && this.convUpdatedAt > (new Date().getTime() - 60000)){
+			this.updateConversionRates();
+		}
 		this.lastThreadLoaded = null;
 		this.loadingMsg('Fetching Threads');
 		$('#chat_input').attr('placeholder','Create a new thread on this page...');
@@ -1354,7 +1366,7 @@ class AppState {
 						}
 					});
 					threadDiv.append(loadThreadLink);
-					threadDiv.append(this.reactDiv(thread.chat_id, thread.chat_date_submitted));
+					threadDiv.append(this.reactDiv(thread.chat_id, thread.chat_date_submitted, thread?.sender_crypto_wallets));
 					const reply_count = threadDiv.find('.chat_reply_count');
 					if(reply_count && thread?.comment_count){
 						reply_count.empty().append(`${thread.comment_count}`);
@@ -1472,6 +1484,57 @@ class AppState {
 		$('#conversion_rate').empty().append(conversion_strings.join('&nbsp;&nbsp;&nbsp;<span style="opacity:0.4;">|</span>&nbsp;&nbsp;&nbsp;'));
 	}
 
+	fetchNotifications(){
+		const server_url = this.getSetting('server_url');
+		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')) return;
+		const notificationURL = `${server_url}/notifications`;
+		const nowSeconds = Math.floor(Date.now() / 1000);
+		const notifsFetchedAt = this.state?.notifsFetchedAt || 0;
+		const getNotifsInterval = (!isNaN(notifsFetchedAt*1) && notifsFetchedAt > 0)? nowSeconds - notifsFetchedAt: 2_629_800;
+		const formData = new FormData();
+		formData.append('seconds', getNotifsInterval);
+		formData.append('captcha_id', this.getSelectedWalletID());
+		formData.append('secret', this.getInvoiceSecret(this.getSelectedWalletID()));
+		fetch(notificationURL, {
+			method: 'POST',
+			body: formData
+		})
+		.then(response => {
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
+			}
+		})
+		.then(json => {
+			const data = typeof json == 'string'? JSON.parse(json): json;
+			console.log('notifications: ', data);
+			if(!data || typeof data != 'object'){
+				this.feed('Server response parse failed.', true);
+				return;
+			}
+			if (data.error) {
+				this.feed(data.error, true);
+				return;
+			}
+			if(data.notifications && Array.isArray(data.notifications) && data.notifications.length > 0){
+				const notifs = data.notifications;
+				$('#notification_count').empty().append(notifs.length);
+				if(notifs.length > 0){
+					$('#notifications_opener').removeClass('faded');
+				}else{
+					$('#notifications_opener').addClass('faded');
+				}
+			}
+			this.state.notifsFetchedAt = nowSeconds;
+			this.saveState();
+		})
+		.catch(error => {
+			this.feed('There has been a problem with your fetch operation. See console.', true);
+			console.error(error);
+		});
+	}
+
 	updateConversionRates(){ // TODO: Update this so it uses BTC -OR- the crypto code of the current wallet.
 		if(this.paused) return;
 		const server_url = this.getSetting('server_url');
@@ -1482,14 +1545,17 @@ class AppState {
 			this.feed('No conversion rate URL set.', true);
 			return;
 		}
+		this.convUpdatedAt = Math.floor(Date.now() / 1000);
 		$.get(conversionRateURL, (data) => {
 			if(!data || !Array.isArray(data) || data.length < 1){
 				this.feed('Array min length of 1 expected for conversion rates.', true);
 				return;
 			}
+			console.log('conversion rate fetch: ', data);
 			this.conversionRates = data;
 			this.displayConversionRates();
 			this.loadWalletSelector();
+			this.fetchNotifications();
 		});
 	}
 
@@ -1538,9 +1604,11 @@ class AppState {
 		if(altFiatCode && typeof altFiatCode == 'string' && altFiatCode.length === 3){
 			fiat_code = altFiatCode;
 		}
-		const rate = this.conversionRates.find(rate => rate.code === fiat_code);
+		const rate = this.conversionRates.find(rate => rate.code === fiat_code && rate.cryptoCode === crypto_code);
 		if(!rate || !rate.rate || isNaN(rate.rate*1)) return 0;
-		return this.cryptoToSatoshi(fiat_amount / rate.rate,crypto_code);
+		const crypto_amount = fiat_amount / rate.rate;
+		const sats = this.cryptoToSatoshi(crypto_amount, crypto_code);
+		return sats;
 	}
 
 	satoshiToFiat(satoshi, crypto_code = 'BTC', altFiatCode = null){
@@ -1778,6 +1846,366 @@ class AppState {
 		$('#form_container').slideDown(200);
     }
 
+	buildChannelList(){
+		$('#form_container').empty();
+
+		var myVerifiedUsernames = {};
+		for (let name in this.state.invoices) {
+			if(this.state.invoices[name].alias && typeof this.state.invoices[name].alias == 'string' && this.state.invoices[name].alias.startsWith('$')){
+				myVerifiedUsernames[name] = {
+					alias: this.state.invoices[name].alias,
+					crypto_currency: this.state.invoices[name].crypto_currency
+				}
+			}
+		}
+
+		if(myVerifiedUsernames.length < 1){ // User not eligible to create channels
+			$('#form_container').append('<h2>No verified usernames found. Get a verified username to create channels.</h2>');
+			return;
+		}
+	
+		$('#form_container').append('<h2>My Verified Usernames</h2>');
+		for(let k in myVerifiedUsernames){
+			const aliasLink = $(
+				`<a class="get_my_channels_link" data-wallet-id="${k}" data-alias="${myVerifiedUsernames[k].alias}" data-crypto-currency="${myVerifiedUsernames[k].crypto_currency}">
+					${myVerifiedUsernames[k].alias}
+				</a>`
+			);
+			aliasLink.on('click', (e) => {
+				e.preventDefault();
+				this.channelCaptchaCache = $(e.currentTarget).attr('data-wallet-id');
+				this.channelCryptoCache = $(e.currentTarget).attr('data-crypto-currency');
+				this.channelAliasCache = myVerifiedUsernames[this.channelCaptchaCache].alias;
+				$('#form_container').empty().append('<h2>Fetching Channels...</h2>');
+				const targ = $(e.currentTarget);
+				const walletID = targ.attr('data-wallet-id');
+				const server_url = this.getSetting('server_url');
+				if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+					this.feed('No server URL set.', true);
+					return;
+				}
+				const getChannelsEndpoint 	= `${server_url}/get_my_channels`;
+				const formData = new FormData();
+				formData.append('captcha_id', walletID);
+				formData.append('secret', this.getInvoiceSecret(walletID));
+				fetch(getChannelsEndpoint, {
+					method: 'POST',
+					body: formData
+				})
+				.then(response => {
+					if (response.ok) {
+						return response.text();
+					} else {
+						throw new Error('Network response was not ok');
+					}
+				})
+				.then(json => {
+					$('#form_container').empty();
+					const data = typeof json == 'string'? JSON.parse(json): json;
+					if(!data || typeof data != 'object'){
+						this.feed('Server response parse failed.', true);
+						return;
+					}
+					if (data.error) {
+						this.feed(`${data.error}`, true);
+						return;
+					}
+					this.feed(data.msg);
+					const channels = data.channels;
+					if(!channels || !Array.isArray(channels) || channels.length < 1){
+						$('#form_container').append('<h3>No channels found.</h3>');
+						return;
+					}
+					const server_url = this.getSetting('server_url');
+					if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+						this.feed('No server URL set.', true);
+						return;
+					}
+					$('#form_container').append('<h2>My Channels</h2>');
+					channels.forEach( channel => {
+						const channelDiv = $('<div class="channel" style="margin-bottom:10px;width:100%;border-top:1px solid rgba(255,255,255,0.4);"></div>');
+						const channelIcon = this.heroicon('rectangle-group') || '👥';
+						channelDiv.append(`<h2><a href="${server_url}/u/${this.channelAliasCache}/${channel.channel}" target="blank">${channelIcon} ${channel.channel}</a></h2>`);
+						// Widgets
+						const pollLink 		= $(`<a href="#" class="channel_polls_link" data-channel="${channel.channel}" data-alias="${this.channelAliasCache}">Polls</a>`);
+						const settingsLink 	= $(`<a href="#" class="channel_settings_link" data-channel="${channel.channel}" data-alias="${this.channelAliasCache}">Settings</a>`);
+						pollLink.on('click', (e) => {
+							e.preventDefault();
+							const targ = $(e.currentTarget);
+							const channel = targ.attr('data-channel');
+							const alias = targ.attr('data-alias');
+							const targetForm = $('.channel_polls_form[data-channel="'+channel+'"][data-alias="'+alias+'"]');
+							$('.channel_polls_form').not(targetForm).css('display','none');
+							$('.channel_settings_from').css('display','none');
+							$('.existing_polls[data-channel="'+channel+'"][data-alias="'+alias+'"]').empty().append('Fetching Polls...').slideDown(200);
+							targetForm.slideToggle(200);
+							// Fetch existing polls
+							const server_url = this.getSetting('server_url');
+							if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+								this.feed('No server URL set.', true);
+								return;
+							}
+							const getPollsEndpoint = `${server_url}/get_poll_titles_for_channel`; // actually a post endpoint
+							const formData = new FormData();
+							formData.append('channel', channel);
+							formData.append('captcha_id', this.channelCaptchaCache);
+							formData.append('verified_name', alias);
+							fetch(getPollsEndpoint, {
+								method: 'POST',
+								body: formData
+							})
+							.then(response => {
+								if (response.ok) {
+									return response.text();
+								} else {
+									throw new Error('Network response was not ok');
+								}
+							})
+							.then(json => {
+								const data = typeof json == 'string'? JSON.parse(json): json;
+								const cont = $('.existing_polls[data-channel="'+channel+'"][data-alias="'+alias+'"]');
+								cont.empty();
+								if(!data || typeof data != 'object'){
+									this.feed('Server response parse failed.', true, cont);
+									return;
+								}
+								if (data.error) {
+									this.feed(`${data.error}`, true, cont);
+									return;
+								}
+								if(!data.poll_titles || !Array.isArray(data.poll_titles) || data.poll_titles.length < 1){
+									cont.append('No polls found.', cont);
+									return;
+								}
+								const poll_titles = data?.poll_titles || [];
+								for(var i=0; i<poll_titles.length; i++){
+									const poll = poll_titles[i];
+									if(!poll || typeof poll != 'string') continue
+									const url_save_poll_name = poll.replace(/ /g,'_').replace(/[^a-zA-Z0-9_]/g,'');
+									const pollLink = $(`<a href="${server_url}/u/${alias}/${channel}?poll=${url_save_poll_name}" target="_blank">${poll}</a>`);
+									cont.append(pollLink,'<br>');
+
+								}
+							})
+							.catch(error => {
+								this.feed('There has been a problem with your fetch operation. See console.', true);
+								console.trace(error);
+							});
+
+						});
+						settingsLink.on('click', (e) => {
+							e.preventDefault();
+							const targ = $(e.currentTarget);
+							const channel = targ.attr('data-channel');
+							const alias = targ.attr('data-alias');
+							const targetForm = $('.channel_settings_from[data-channel="'+channel+'"][data-alias="'+alias+'"]');
+							$('.channel_polls_form').css('display','none');
+							$('.channel_settings_from').not(targetForm).css('display','none');
+							targetForm.slideToggle(200);
+						});
+
+						const pollForm 		= $(
+							`<form class="channel_polls_form" data-channel="${channel.channel}" data-alias="${this.channelAliasCache}" style="display:none;">
+								<h4>Existing Polls</h4>
+								<div class="existing_polls" data-channel="${channel.channel}" data-alias="${this.channelAliasCache}"></div>
+								<h4>Create a New Poll</h4>
+								<input type="hidden" name="channel" value="${channel.channel}">
+								<input type="hidden" name="captcha_id" value="${this.channelCaptchaCache}">
+								<label for="date_end">
+									<details>
+										<summary>Poll End Date</summary>
+										<p>Enter the date that the poll will end. Users can vote on the poll until this date.</p>
+									</details>
+								</label>
+								<input type="date" name="date_end" required>
+								<br><br>
+								<label for="poll_title">
+									<details>
+										<summary>Poll Question</summary>
+										<p>Enter the question for your poll. Users can create threads at the URL for your poll to create entries to be voted on.</p>
+									</details>
+								</label>
+								<input type="text" name="poll_title" placeholder="Poll Question" required>
+								<br>
+								<input type="submit" value="Create Poll">
+								<br><br>
+							</form>`
+						);
+						pollForm.on('submit', (e) => {
+							e.preventDefault();
+							const formData = new FormData(e.target);
+							const walletID = formData.get('captcha_id');
+							const dateVal  = formData.get('date_end');
+							// convert dateVal to one that the python server can understand
+							// user_date = datetime.strptime(date_end, '%a, %d %b %Y %H:%M:%S %Z')
+							const dateObj = new Date(dateVal);
+							const dateStr = dateObj.toUTCString();
+							formData.set('date_end', dateStr);
+							formData.append('secret', this.getInvoiceSecret(walletID));
+							formData.append('verified_name',this.channelAliasCache);
+							const server_url = this.getSetting('server_url');
+							if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+								this.feed('No server URL set.', true);
+								return;
+							}
+							const createPollEndpoint = `${server_url}/create_poll`;
+							fetch(createPollEndpoint, {
+								method: 'POST',
+								body: formData
+							})
+							.then(response => {
+								if (response.ok) {
+									return response.text();
+								} else {
+									throw new Error('Network response was not ok');
+								}
+							})
+							.then(json => {
+								const data = typeof json == 'string'? JSON.parse(json): json;
+								if(!data || typeof data != 'object'){
+									this.feed('Server response parse failed.', true);
+									return;
+								}
+								if (data.error) {
+									this.feed(`${data.error}`, true);
+									return;
+								}
+								this.feed(data.msg);
+							})
+							.catch(error => {
+								this.feed('There has been a problem with your fetch operation. See console.', true);
+								console.trace(error);
+							})
+							.finally(() => {
+								$('.channel_polls_form').each(function(){
+									$(this).slideUp(200,function(){
+										$(this).find('input[type="date"]').val('');
+										$(this).find('input[type="text"]').val('');
+										$(this).find('.existing_polls').empty();
+									});
+								});
+							});
+
+						});
+						// Settings
+						const channelForm = $(
+							`<form class="channel_settings_from" data-channel="${channel.channel}" data-alias="${this.channelAliasCache}" style="display:none;">
+								<h4>Channel Settings</h4>
+								<input type="hidden" name="channel" value="${channel.channel}">
+								<input type="hidden" name="captcha_id" value="${this.channelCaptchaCache}">
+								<input type="hidden" name="date_end" value="0">
+								<input type="checkbox" name="premium_flag" class="channel_premium_flag" value="1" ${channel.premium_flag? 'checked': ''}> Premium Channel
+								<br>
+								<div class="premium_settings" style="display:${channel.premium_flag? 'block': 'none'};">
+									<br>
+									<label for="premium_satoshi_threshold">
+										<details>
+											<summary>Premium Sats Threshold</summary>
+											<p>Set the minimum amount of sats (or piconero) required to access this channel.</p>
+										</details>
+									</label>
+									<input type="number" step="1" min="0" class="premium_satoshi_threshold" name="premium_satoshi_threshold" value="${channel.premium_satoshi_threshold || ''}">
+									<div class="premium_sat_as_fiat" style="display:${channel.premium_satoshi_threshold? 'block': 'none'};">
+										${this.satoshiToFiatStr(channel.premium_satoshi_threshold,this.channelCryptoCache)}
+									</div>
+									<br>
+									<br>
+									<label for="premium_day_threshold">
+										<details>
+											<summary>Premium Day Threshold</summary>
+											<p>This sets the number of days that users can access the channel after meeting the minimum sats threshold.</p>
+										</details>
+									</label>
+									<input type="number" step="1" min="0" name="premium_day_threshold" value="${channel.premium_day_threshold || ''}">
+								</div>
+								<br>
+								<input type="submit" value="Save Channel Settings" style="display:none;">
+								<br><br>
+							</form>`
+						);
+						channelForm.find('.channel_premium_flag').on('change', (e) => {
+							const targ = $(e.currentTarget);
+							const submit_button = targ.parent().find('input[type="submit"]');
+							submit_button.slideDown(200);
+							const premium_settings = targ.parent().find('.premium_settings');
+							if(targ.is(':checked')){
+								premium_settings.slideDown(200);
+							}else{
+								premium_settings.slideUp(200);
+								// Clear the threshold values
+								targ.parent().find('.premium_satoshi_threshold').val('');
+								targ.parent().find('.premium_day_threshold').val('');
+								targ.parent().find('.premium_sat_as_fiat').empty().hide();
+							}
+						});
+						channelForm.find('.premium_satoshi_threshold').on('input', (e) => {
+							const targ = $(e.currentTarget);
+							var val = targ.val();
+								val = (!isNaN(val*1) && val*1)? val*1: 0;
+							const fiat_display = targ.parent().find('.premium_sat_as_fiat');
+							fiat_display.empty().append(this.satoshiToFiatStr(val,this.channelCryptoCache));
+							fiat_display.slideDown(200);
+						});
+						channelForm.on('submit', (e) => {
+							e.preventDefault();
+							const formData = new FormData(e.target);
+							const walletID = formData.get('captcha_id');
+							var satsThreshold = formData.get('premium_satoshi_threshold');
+								satsThreshold = (!isNaN(satsThreshold*1) && satsThreshold*1)? satsThreshold*1: 0;
+							var daysThreshold = formData.get('premium_day_threshold');
+								daysThreshold = (!isNaN(daysThreshold*1) && daysThreshold*1)? daysThreshold*1: 0;
+							formData.append('update_flag_satoshi_threshold',(satsThreshold > 0)? 1: 0);
+							formData.append('update_flag_day_threshold',(daysThreshold > 0)? 1: 0);
+							formData.append('verified_name',this.channelAliasCache);
+							formData.append('secret', this.getInvoiceSecret(walletID));
+							const premiumFlag = formData.get('premium_flag');
+							formData.append('premium_flag', premiumFlag? '1': '0');
+							const server_url = this.getSetting('server_url');
+							if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+								this.feed('No server URL set.', true);
+								return;
+							}
+							const saveChannelSettingsEndpoint = `${server_url}/channel_configuration`;
+							fetch(saveChannelSettingsEndpoint, {
+								method: 'POST',
+								body: formData
+							})
+							.then(response => {
+								if (response.ok) {
+									return response.text();
+								} else {
+									throw new Error('Network response was not ok');
+								}
+							})
+							.then(json => {
+								const data = typeof json == 'string'? JSON.parse(json): json;
+								if(!data || typeof data != 'object'){
+									this.feed('Server response parse failed.', true);
+									return;
+								}
+								this.feed(data.msg);
+							})
+							.catch((error) => {
+								console.error('Error:', error);
+								feed('Error saving channel settings.', true);
+							})
+							.finally(() => {
+								$('.channel_settings_from').slideUp(200);
+							});
+						});
+						channelDiv.append(pollLink, '&nbsp;&nbsp;<span class="faded">|</span>&nbsp;&nbsp;', settingsLink, '<br>', pollForm,channelForm);
+						$('#form_container').append(channelDiv);
+					});
+				});
+			});
+			$('#form_container').append(aliasLink,'<br><br>');
+		}
+		if($('.get_my_channels_link').length == 1){ // no need to make user select if only one verified username
+			$('.get_my_channels_link').trigger('click');
+		}
+		$('#form_container').slideDown(200);
+	}
+
 	loadChannelSelector(){// fetch the channels for verified users.
 		$('#create_thread_channel_selector').off().empty().append('<option value="">Select Channel</option>');
 		if(!this.currentCaptcha || typeof this.currentCaptcha != 'string' || this.currentCaptcha.toLowerCase().trim() == 'free') return;
@@ -1891,6 +2319,7 @@ class AppState {
 			$('#wallet_selector').off().on('change', (e) => {
 				const targ 			= $(e.currentTarget);
 				this.currentCaptcha = targ.val();
+				$('#spend_input').trigger('keyup');
 				this.saveState();
 
 				// Reload the thread or get threads again when user changes wallet.
@@ -1912,6 +2341,12 @@ class AppState {
 		const selectedWalletID = this.getSelectedWalletID();
 		if(selectedWalletID === 'free') return 0;
 		return this.state.invoices[selectedWalletID]?.balance || 0;
+	}
+
+	getSelectedWalletCryptoCode(){
+		const selectedWalletID = this.getSelectedWalletID();
+		if(selectedWalletID === 'free') return null;
+		return this.state.invoices[selectedWalletID]?.crypto_currency || 'BTC';
 	}
 	
 	buildWalletForm(){
@@ -2322,8 +2757,9 @@ class AppState {
 						const unit 	= vfee.unit || null;
 						var feeStr 	= 'Fee not found!';
 						if(fee && unit){
-							const stats = this.fiatToSatoshi(fee, unit);
-							const fiatStr = this.satoshiToFiatStr(stats, unit);
+							const ccode 	= this.getSelectedWalletCryptoCode();
+							const stats 	= this.fiatToSatoshi(fee, ccode);
+							const fiatStr 	= this.satoshiToFiatStr(stats, ccode);
 							feeStr = `${fiatStr} (${stats} sats)`;
 						}
 						$('.user_verification_fee').empty().append(feeStr);

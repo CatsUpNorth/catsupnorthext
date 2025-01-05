@@ -322,6 +322,7 @@ $('document').ready(function(){
 	$('#nav-buy').on('click', function(){ hideNavs(); app.buildWalletForm(); });
 	$('#nav-follows').on('click', function(){ hideNavs(); app.buildFollowList(); });
 	$('#nav-settings').on('click', function(){ hideNavs(); app.buildSettingsForm(); });
+	$('#nav-channels').on('click', function(){ hideNavs(); app.buildChannelList(); });
 	$('#nav-close').on('click', function(){
 		$('#nav_dropdown').hide(300,function(){
 			$('#form_container').empty().hide();
@@ -376,7 +377,8 @@ $('document').ready(function(){
 	$('#spend_input').on('keyup', function(event){
 		event.preventDefault();
 		const v 	= isNaN($(this).val()*1)? 0: $(this).val()*1;
-		const sats 	= app.fiatToSatoshi(v);
+		const ccode = app.getSelectedWalletCryptoCode();
+		const sats 	= app.fiatToSatoshi(v, ccode);
 		const bal 	= app.getSelectedWalletBalance();
 		if(sats > bal){
 			$('#spend_sat').add('#spend_input').addClass('error-border')
@@ -392,13 +394,14 @@ $('document').ready(function(){
 		}
 		$('#spend_sat').val(sats);
 		const star 		= app.heroicon('star-solid') || '⭐';
-		$('#spend_desc').empty().append(`${star} ${app.fiatStrFormatted(v)} ${star} ${app.satoshiToCryptoStr(sats)} ${star}`);
+		$('#spend_desc').empty().append(`${star}&nbsp;${star}&nbsp;${star}&nbsp;${app.satoshiToCryptoStr(sats,ccode)}&nbsp;&nbsp;${app.fiatStrFormatted(v)}&nbsp;${star}&nbsp;${star}&nbsp;${star}`);
 		if(event.key === 'Enter') $('#send_link').trigger('click');
 	});
 	$('#spend_sat').on('keyup', function(event){
 		event.preventDefault();
 		const sats	= isNaN($(this).val()*1)? 0: $(this).val()*1;
 		const bal 	= app.getSelectedWalletBalance();
+		const typ 	= app.getSelectedWalletCryptoCode();
 		if(sats > bal){
 			$('#spend_sat').add('#spend_input').addClass('error-border')
 			$('#spend_sat').add('#spend_input').add('#spend_desc').addClass('error');
@@ -411,12 +414,12 @@ $('document').ready(function(){
 			$('#spend_desc').empty();
 			return;
 		}
-		$('#spend_input').val(app.satoshiToFiat(sats));
+		$('#spend_input').val(app.satoshiToFiat(sats,typ).toFixed(2));
 		const star 		= app.heroicon('star-solid') || '⭐';
-		$('#spend_desc').empty().append(`${star} ${app.satoshiToFiatStr(sats)} ${star} ${app.satoshiToCryptoStr(sats)} ${star}`);
+		$('#spend_desc').empty().append(`${star} ${app.satoshiToFiatStr(sats,typ)} ${star} ${app.satoshiToCryptoStr(sats,typ)} ${star}`);
 		if(event.key === 'Enter') $('#send_link').trigger('click');
 	});
-	$('#sats_max').on('click', function(){
+	$('#spend_max').off().on('click', function(){
 		const bal = app.getSelectedWalletBalance();
 		$('#spend_sat').val(bal)
 		$('#spend_sat').trigger('keyup');
