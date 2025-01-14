@@ -4,7 +4,15 @@ class AppState {
 		this.version			= '1.0.0';
 		this.paused 			= false;
 		this.convUpdatedAt		= null; // Last time conversion rates were updated in seconds from epoch
-		this.state				= {notifsFetchedAt:null, notifications: []}; // store notifications until users mark read.
+		this.state				= {notifsFetchedAt:null}; // store notifications until users mark read.
+		this.primedThreadID		= null; // A web page is trying to get us to go directly to a thread instead loading the threads list.
+		this.primedURL			= null; // Make sure we are on the right page before loading the primed thread.
+		this.primedChatID		= null; // optional 'scroll-to' directive
+
+		// Notification arrays
+		this.newThreads 		= [];
+		this.newReplies 		= [];
+
 		this.settingsSchema 	= {};
 		this.passCache			= {}; // Password attempts by thread id
 		this.contentCacheFC		= null; // Used to save the last chat sent for when users are doing a free chat.
@@ -783,7 +791,9 @@ class AppState {
 				event.preventDefault();
 				this.clearChatCloneContainer();
 			});
-			$('#reply_clone_container').css({display:'none'}).empty().append(`<hr><span class="chat_info">${title}</span>`,replyToClone,'<br>&nbsp;',cancelLink).slideDown(300);
+			$('#reply_clone_container').css({display:'none'}).empty().append(`<hr><span class="chat_info">${title}</span>`,replyToClone,'<br>&nbsp;',cancelLink).slideDown(300,function(){
+				$('#chat_input').focus();
+			});
 		});
 		container.find('.reaction_link_span').prepend(crossPostLink).prepend(replyLink);
 		return container;
@@ -977,6 +987,18 @@ class AppState {
         this.currentThreadID = (threadId && !isNaN(threadId*1))? threadId*1: null;
     }
 
+	primeThread(threadId = null, url = null, scroll_to_chat = null){
+		this.primedThreadID = (threadId && !isNaN(threadId*1))? threadId*1: null;
+		this.primedURL 		= url || null;
+		this.primedChatID 	= scroll_to_chat || null;
+		if(!this.primedThreadID || !this.primedURL){ // fall back to normal thread loading
+			this.primedThreadID = null;
+			this.primedURL 		= null;
+			this.primedChatID 	= null;
+		}
+		console.log('Thread primed:',this.primedThreadID,this.primedURL,this.primedChatID);
+	}
+
 	getCurrentThreadID(){
 		return this?.currentThreadID || null;
 	}
@@ -1050,6 +1072,7 @@ class AppState {
 	}
 
 	loadThread(threadId = null, password = null, force_restart = false){
+		// NOTE: Need to preserve the primedChatID so we can scroll to it after the thread is loaded.
 		if(!threadId || isNaN(threadId*1)) threadId = this.getCurrentThreadID();
 		if(this.paused || !threadId) return;
 		this.midRequest = true;
@@ -1159,7 +1182,6 @@ class AppState {
 					chatDivClasses.push('hidden_chat');
 				}
 				if(isSuper){
-					console.log('superchat: ', chat);
 					chatDivClasses.push('superchat');
 					const amount 	= chat.superchat*1;
 					const fiatStr 	= this.satoshiToFiatStr(amount, chat?.sender_crypto_type);
@@ -1242,6 +1264,17 @@ class AppState {
 
 	getThreads(url_arg = null){
 		if(this.paused) return;
+		if(url_arg) this.updateCurrentUserURL(url_arg);
+		const url = this.getCurrentURL();
+
+		// special case for primed threads
+		if(this.primedThreadID && this.primedURL == url){
+			this.loadThread(this.primedThreadID);
+			this.primedThreadID = null;
+			this.primedURL = null;
+			return;
+		}
+
 		this.allThreadChatIds = [];
 		this.midRequest = true;
 
@@ -1257,8 +1290,6 @@ class AppState {
 		this.setCurrentThreadID(null);
 		this.clearChatCloneContainer();
 		$('#scroll_to_bottom_container').add('#exit_thread_container').add('#create_thread_options').add('#spend_form').css('display','none');
-		if(url_arg) this.updateCurrentUserURL(url_arg);
-		const url = this.getCurrentURL();
 		if(!url){
 			this.feed("No URL to fetch threads for.", true);
 			return;
@@ -1496,9 +1527,11 @@ class AppState {
 		const notifsFetchedAt = this.state?.notifsFetchedAt || 0;
 		const getNotifsInterval = (!isNaN(notifsFetchedAt*1) && notifsFetchedAt > 0)? nowSeconds - notifsFetchedAt: 2_629_800;
 		const formData = new FormData();
+		const captcha_id = this.getSelectedWalletID();
+		if(!captcha_id || !(captcha_id in this.state.invoices)) return; // User may not have selected a wallet yet.
+		formData.append('captcha_id', captcha_id);
 		formData.append('seconds', getNotifsInterval);
-		formData.append('captcha_id', this.getSelectedWalletID());
-		formData.append('secret', this.getInvoiceSecret(this.getSelectedWalletID()));
+		formData.append('secret', this.getInvoiceSecret(captcha_id));
 		fetch(notificationURL, {
 			method: 'POST',
 			body: formData
@@ -1520,14 +1553,16 @@ class AppState {
 				this.feed(data.error, true);
 				return;
 			}
-			if(data.notifications && Array.isArray(data.notifications) && data.notifications.length > 0){
-				const notifs = data.notifications;
-				$('#notification_count').empty().append(notifs.length);
-				if(notifs.length > 0){
-					$('#notifications_opener').removeClass('faded');
-				}else{
-					$('#notifications_opener').addClass('faded');
-				}
+			var new_threads 	= data?.new_threads || [];
+			this.newThreads		= Array.isArray(new_threads)? JSON.parse(JSON.stringify(new_threads)): [];
+			var new_replies 	= data?.new_replies || [];
+			this.newReplies		= Array.isArray(new_replies)? JSON.parse(JSON.stringify(new_replies)): [];
+			const total_notifs 	= new_threads.length + new_replies.length;
+			$('#notification_count').empty().append(total_notifs.toString());
+			if(total_notifs > 0){
+				$('#notifications_opener').removeClass('faded');
+			}else{
+				$('#notifications_opener').addClass('faded');
 			}
 			this.state.notifsFetchedAt = nowSeconds;
 			this.saveState();
@@ -1916,7 +1951,6 @@ class AppState {
 					const channels = data.channels;
 					if(!channels || !Array.isArray(channels) || channels.length < 1){
 						$('#form_container').append('<h3>No channels found.</h3>');
-						return;
 					}
 					const server_url = this.getSetting('server_url');
 					if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
@@ -2024,7 +2058,7 @@ class AppState {
 								<label for="poll_title">
 									<details>
 										<summary>Poll Question</summary>
-										<p>Enter the question for your poll. Users can create threads at the URL for your poll to create entries to be voted on.</p>
+										<p>Enter the question for your poll. Any user can create threads at the poll URL to create entries to be voted on. Users vote on threads by upvoting them. *Add an asterisk to the start of a poll to lock it so that only your threads show up in the poll.</p>
 									</details>
 								</label>
 								<input type="text" name="poll_title" placeholder="Poll Question" required>
@@ -2092,7 +2126,7 @@ class AppState {
 						// Settings
 						const channelForm = $(
 							`<form class="channel_settings_from" data-channel="${channel.channel}" data-alias="${this.channelAliasCache}" style="display:none;">
-								<h4>Channel Settings</h4>
+								<h4>Channel Settings <span style="color:rgb(255,100,100);font-style:italic;"><br>PREMIUM FEATURES COMING SOON!</span></h4>
 								<input type="hidden" name="channel" value="${channel.channel}">
 								<input type="hidden" name="captcha_id" value="${this.channelCaptchaCache}">
 								<input type="hidden" name="date_end" value="0">
@@ -2198,6 +2232,66 @@ class AppState {
 						channelDiv.append(pollLink, '&nbsp;&nbsp;<span class="faded">|</span>&nbsp;&nbsp;', settingsLink, '<br>', pollForm,channelForm);
 						$('#form_container').append(channelDiv);
 					});
+					
+					const addChannelForm = $(
+						`<form class="add_channel_form">
+							<input type="hidden" name="captcha_id" value="${k}">
+							<input type="hidden" name="verified_name" value="${myVerifiedUsernames[k].alias}">
+							<h2>Create a New Channel</h2>
+							<label for="channel_name">
+								<details>
+									<summary>Channel Name</summary>
+									<p>Enter the name of your new channel. This channel will be added as a page on the public ${myVerifiedUsernames[k].alias} Page.</p>
+								</details>
+							</label>
+							<input type="text" name="channel" required>
+							<br><br>
+							<input type="submit" value="Create Channel">
+							<br><br>
+						</form>`
+					);
+					addChannelForm.on('submit', (e) => {
+						e.preventDefault();
+						const formData = new FormData(e.target);
+						const walletID = formData.get('captcha_id');
+						formData.append('secret', this.getInvoiceSecret(walletID));
+						const server_url = this.getSetting('server_url');
+						if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+							this.feed('No server URL set.', true);
+							return;
+						}
+						const createChannelEndpoint = `${server_url}/channel_configuration`;
+						fetch(createChannelEndpoint, {
+							method: 'POST',
+							body: formData
+						})
+						.then(response => {
+							if (response.ok) {
+								return response.text();
+							} else {
+								throw new Error('Network response was not ok');
+							}
+						})
+						.then(json => {
+							const data = typeof json == 'string'? JSON.parse(json): json;
+							if(!data || typeof data != 'object'){
+								this.feed('Server response parse failed.', true);
+								return;
+							}
+							if (data.error) {
+								this.feed(`${data.error}`, true);
+								return;
+							}
+							this.feed(data.msg);
+							this.buildChannelList();
+							setTimeout(this.loadChannelSelector, 1000);
+						})
+						.catch(error => {
+							this.feed('There has been a problem with your fetch operation. See console.', true);
+							console.trace(error);
+						});
+					});
+					$('#form_container').append('<br><br>',addChannelForm);
 				});
 			});
 			$('#form_container').append(aliasLink,'<br><br>');
@@ -2210,58 +2304,67 @@ class AppState {
 
 	loadChannelSelector(){// fetch the channels for verified users.
 		$('#create_thread_channel_selector').off().empty().append('<option value="">Select Channel</option>');
-		if(!this.currentCaptcha || typeof this.currentCaptcha != 'string' || this.currentCaptcha.toLowerCase().trim() == 'free') return;
+		const selectedCaptcha = this.getSelectedWalletID();
+		if(!selectedCaptcha || selectedCaptcha.toLowerCase().trim() == 'free') return;
 
-		// Make sure the user is verified
-		const alias = this.state.invoices[this.currentCaptcha]?.alias || null;
-		if(!alias || typeof alias != 'string' || !alias.startsWith('$')) return;
-
-		const formData = new FormData();
-		formData.append('captcha_id', this.currentCaptcha);
-		formData.append('secret', app.getInvoiceSecret(this.currentCaptcha));
-		const server_url = app.getSetting('server_url');
-		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
-			app.feed('No server URL set.', true);
-			return;
-		}
-		const getChannelsEndpoint = `${server_url}/get_my_channels`;
-		fetch(getChannelsEndpoint, {
-			method: 'POST',
-			body: formData
-		})
-		.then(response => {
-			if (response.ok) {
-				return response.text();
-			} else {
-				throw new Error('Network response was not ok');
-			}
-		})
-		.then(json => {
-			const data = typeof json == 'string'? JSON.parse(json): json;
-			if(!data || typeof data != 'object'){
-				app.feed('Server response parse failed.', true);
+		try{
+			// Make sure the user is verified
+			console.log(1);
+			const alias = this.state.invoices[selectedCaptcha]?.alias || null;
+			console.log(2);
+			if(!alias || typeof alias != 'string' || !alias.startsWith('$')) return;
+			console.log(3);
+	
+			const formData = new FormData();
+			formData.append('captcha_id', selectedCaptcha);
+			formData.append('secret', app.getInvoiceSecret(selectedCaptcha));
+			const server_url = app.getSetting('server_url');
+			if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+				app.feed('No server URL set.', true);
 				return;
 			}
-			const channels = data?.channels || [];
-			const channelSelector = $('#create_thread_channel_selector');
-			if(channels.length > 0){
-				channelSelector.empty().append(`<option value="">Select Channel - ${channels.length}</option>`);
-				channels.forEach((channel) => {
-					if(!channel || typeof channel != 'object' || !channel.channel || typeof channel.channel != 'string') return;
-					channelSelector.append(`<option value="${channel.channel}">${channel.channel}</option>`);
-				});
-				channelSelector.on('change', (e) => {
-					const targ = $(e.currentTarget);
-					const channel = targ.val();
-					if(channel && typeof channel == 'string' && channel.length > 0){
-						$('#thread_channel').val(channel);
-					}
-				});
-				$('#my_channel_options').slideDown(200);
-			}else{
-				$('#my_channel_options').slideUp(200);
-			}
-		});
+			const getChannelsEndpoint = `${server_url}/get_my_channels`;
+			fetch(getChannelsEndpoint, {
+				method: 'POST',
+				body: formData
+			})
+			.then(response => {
+				if (response.ok) {
+					return response.text();
+				} else {
+					throw new Error('Network response was not ok');
+				}
+			})
+			.then(json => {
+				const data = typeof json == 'string'? JSON.parse(json): json;
+				if(!data || typeof data != 'object'){
+					app.feed('Server response parse failed.', true);
+					return;
+				}
+				const channels = data?.channels || [];
+				const channelSelector = $('#create_thread_channel_selector');
+				if(channels.length > 0){
+					channelSelector.empty().append('<option>Select Channel (optional)</option>');
+					channels.forEach((channel) => {
+						if(!channel || typeof channel != 'object' || !channel.channel || typeof channel.channel != 'string') return;
+						channelSelector.append(`<option value="${channel.channel}">${channel.channel}</option>`);
+					});
+					// select the first channel
+					channelSelector.on('change', (e) => {
+						const targ = $(e.currentTarget);
+						const channel = targ.val();
+						if(channel && typeof channel == 'string' && channel.length > 0){
+							$('#thread_channel').val(channel);
+						}
+					});
+					$('#my_channel_options').slideDown(200);
+				}else{
+					$('#my_channel_options').slideUp(200);
+				}
+			});
+		}catch(e){
+			console.error(e);
+		}
 	}
 
 	getSelectedWalletID(){

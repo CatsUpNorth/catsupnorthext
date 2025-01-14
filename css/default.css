@@ -23,6 +23,8 @@
   --dm-scrollbar-thumb: #333;
   --dm-scrollbar-track: #1a1a1a;
 
+  --dm-invert: invert(0.9);
+
   /* Light Mode */
   --lm-dark-bg: gainsboro;
   --lm-bg: #f5f5f5;
@@ -43,6 +45,8 @@
 
   --lm-scrollbar-thumb: #ccc;
   --lm-scrollbar-track: #f5f5f5;
+
+  --lm-invert: invert(0.1);
 
 }
 
@@ -76,6 +80,7 @@ ul {
 * {
   box-sizing: border-box;
   outline: none;
+  color: light-dark(var(--lm-txt), var(--dm-txt));
 }
 *::-webkit-scrollbar {
   width: 8px;
