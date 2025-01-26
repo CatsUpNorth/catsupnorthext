@@ -199,41 +199,6 @@ function scrapeURL(url){
 	});
 }
 
-function addPrimerListeners(){
-	// Get the title and description of the user's current tab.
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (chrome.runtime.lastError || !tabs.length) return;
-        const tab = tabs[0]; // Get the active tab
-		const url = tab?.url || null;
-		if(!url) return;
-		if(bannedURLs.some(banned => url.startsWith(banned))) return;
-		// Execute a custom script on the page to scrape the title, descript, and image.
-		chrome.scripting.executeScript({
-			target: {tabId: tab.id},
-			function: () => {
-				document.querySelectorAll('a.cunext_thread_primer').forEach((a) => {
-					a.addEventListener('click', function(event){
-						event.preventDefault();
-						const thread_id = this.getAttribute('data-thread-id');
-						const chat_id 	= this.getAttribute('data-chat-id');
-						const url 		= this.getAttribute('href');
-						chrome.runtime.sendMessage({action: 'cunext_prime_thread', thread_id: thread_id, chat_id: chat_id, url: url}, (response) => {
-							if(response?.success){
-								console.log('primed');
-							}else{
-								console.error('failed to prime thread');
-							}
-							// Open url in new tab
-							window.open(url, '_blank').focus();
-						});
-					});
-					a.classList.remove('cunext_thread_primer');
-				});
-			}
-		});
-	});
-}
-
 // listen for messages from the user's current tab
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	if(request?.action === 'set_metadata_image'){
@@ -383,6 +348,9 @@ $('document').ready(function(){
 			$('#form_container').empty().hide();
 			$('#nav-close').hide();
 		});
+	});
+	$('#notifications_opener').on('click', function(){
+		app.buildNotificationsForm();
 	});
 	$('#gui').on('scroll', function(){
 		const isScrolledToBottom = $(this).scrollTop() + $(this).innerHeight() >= $(this)[0].scrollHeight - 10;
@@ -586,7 +554,6 @@ $('document').ready(function(){
 	chrome.webNavigation.onCompleted.addListener((details) => { // Monitor when a user navigates to a new page in the current tab
 		if(!app) return; // app is loaded when page ready.
 		chrome.tabs.get(details.tabId, (tab) => {
-			addPrimerListeners();
 			if (tab && tab.url && tab.url != lastUrlLoaded){
 				app.getThreads(tab.url);
 				lastUrlLoaded = tab.url;
@@ -598,7 +565,6 @@ $('document').ready(function(){
 	chrome.tabs.onActivated.addListener((activeInfo) => { // Listen for navigation on current tab
 		if(!app) return; // app is loaded when page ready.
 		chrome.tabs.get(activeInfo.tabId, (tab) => {
-			addPrimerListeners();
 			if (tab && tab.url && tab.url != lastUrlLoaded){
 				app.getThreads(tab.url);
 				lastUrlLoaded = tab.url;
@@ -610,7 +576,6 @@ $('document').ready(function(){
 	chrome.tabs.onCreated.addListener((tab) => { // Listen for new tab creation
 		if(!app) return; // app is loaded when page ready.
 		if (tab && tab.url && tab.url != lastUrlLoaded){
-			addPrimerListeners();
 			app.getThreads(tab.url);
 			lastUrlLoaded = tab.url;
 			urlMetaData = null;
@@ -621,7 +586,6 @@ $('document').ready(function(){
 	chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
 		if(!app) return; // app is loaded when page ready.
 		chrome.tabs.get(details.tabId, (tab) => {
-			addPrimerListeners();
 			if (tab && tab.url && tab.url != lastUrlLoaded){
 				app.getThreads(tab.url);
 				lastUrlLoaded = tab.url;
@@ -630,6 +594,4 @@ $('document').ready(function(){
 			}
 		});
 	});
-	// call addPrimerListeners on extension startup
-	addPrimerListeners();
 });

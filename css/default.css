@@ -367,3 +367,6 @@ hr{
 .url_mod_table tr.disabled td{
   opacity:0.4;
 }
+.notification{
+  padding:5px;
+}

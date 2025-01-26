@@ -4,14 +4,11 @@ class AppState {
 		this.version			= '1.0.0';
 		this.paused 			= false;
 		this.convUpdatedAt		= null; // Last time conversion rates were updated in seconds from epoch
-		this.state				= {notifsFetchedAt:null}; // store notifications until users mark read.
-		this.primedThreadID		= null; // A web page is trying to get us to go directly to a thread instead loading the threads list.
-		this.primedURL			= null; // Make sure we are on the right page before loading the primed thread.
-		this.primedChatID		= null; // optional 'scroll-to' directive
+		this.state				= {}; // store notifications until users mark read.
 
-		// Notification arrays
-		this.newThreads 		= [];
-		this.newReplies 		= [];
+		// chat forwarding
+		this.forwardedChatID	= null; // chat id to forward users to after visiting the /chat_forwarding page
+		this.forwardedThreadID	= null; // thread id to forward users to after visiting the /chat_forwarding page
 
 		this.settingsSchema 	= {};
 		this.passCache			= {}; // Password attempts by thread id
@@ -987,18 +984,6 @@ class AppState {
         this.currentThreadID = (threadId && !isNaN(threadId*1))? threadId*1: null;
     }
 
-	primeThread(threadId = null, url = null, scroll_to_chat = null){
-		this.primedThreadID = (threadId && !isNaN(threadId*1))? threadId*1: null;
-		this.primedURL 		= url || null;
-		this.primedChatID 	= scroll_to_chat || null;
-		if(!this.primedThreadID || !this.primedURL){ // fall back to normal thread loading
-			this.primedThreadID = null;
-			this.primedURL 		= null;
-			this.primedChatID 	= null;
-		}
-		console.log('Thread primed:',this.primedThreadID,this.primedURL,this.primedChatID);
-	}
-
 	getCurrentThreadID(){
 		return this?.currentThreadID || null;
 	}
@@ -1072,7 +1057,6 @@ class AppState {
 	}
 
 	loadThread(threadId = null, password = null, force_restart = false){
-		// NOTE: Need to preserve the primedChatID so we can scroll to it after the thread is loaded.
 		if(!threadId || isNaN(threadId*1)) threadId = this.getCurrentThreadID();
 		if(this.paused || !threadId) return;
 		this.midRequest = true;
@@ -1236,8 +1220,14 @@ class AppState {
 
 			// scroll to btm of thread_container
 			if(startMode){
-				this.skipAutoScroll = false;
-				$('#scroll_to_bottom_container').css({display:'block'});
+				if(this.forwardedChatID && $(`.chat[data-id="${this.forwardedChatID}"]`).length > 0){
+					this.skipAutoScroll = true;
+					// scroll to the forwarded chat
+					$(`.chat[data-id="${this.forwardedChatID}"]`).get(0).scrollIntoView({behavior: "smooth", block: "center"});
+				}else{
+					this.skipAutoScroll = false;
+					$('#scroll_to_bottom_container').css({display:'block'});
+				}
 			}
 			if(!this.skipAutoScroll) this.scrollDown();
 			this.cleanUpTimeInfo();
@@ -1264,16 +1254,10 @@ class AppState {
 
 	getThreads(url_arg = null){
 		if(this.paused) return;
-		if(url_arg) this.updateCurrentUserURL(url_arg);
-		const url = this.getCurrentURL();
-
-		// special case for primed threads
-		if(this.primedThreadID && this.primedURL == url){
-			this.loadThread(this.primedThreadID);
-			this.primedThreadID = null;
-			this.primedURL = null;
-			return;
+		if(url_arg){
+			this.updateCurrentUserURL(url_arg);
 		}
+		const url = this.getCurrentURL();
 
 		this.allThreadChatIds = [];
 		this.midRequest = true;
@@ -1339,7 +1323,7 @@ class AppState {
 					const isMe = thread?.is_me || false;
 					const isFree = thread?.is_free || false;
 					if(hide_free_threads && isFree) return; // Do not add free threads if setting is enabled
-					const threadDiv = $('<div class="thread' + (isFree? ' free_thread': '') + '' + (isMe? ' my_thread': '') + '"></div>');
+					const threadDiv = $(`<div class="thread${(isFree? ' free_thread': '')}${(isMe? ' my_thread': '')}"><strong class="chat_info">${thread.thread_id}</strong>&nbsp;&nbsp;</div>`);
 					threadDiv.append(this.createFollowLink(thread.alias, isMe, isFree),'&nbsp;&nbsp;',this.createUserPageLink(thread.alias));
 					if(server_url && thread.alias && thread.alias.startsWith('$')){
 						const channelURL  = (thread.channel && typeof thread.channel == 'string')? `${server_url}/u/${thread.alias}?channel=${thread.channel}`: '';
@@ -1414,6 +1398,11 @@ class AppState {
 				this.updateReactions(data?.reactions);
 				// scroll to btm of thread_container
 				$('#gui').scrollTop(0);
+				// trigger click of this.forwardedThreadID if any
+				if(this.forwardedThreadID && $(`.thread_opener[data-thread-id="${this.forwardedThreadID}"]`).length > 0){
+					$(`.thread_opener[data-thread-id="${this.forwardedThreadID}"]`).trigger('click');
+					this.forwardedThreadID = null;
+				}
 			})
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
@@ -1486,7 +1475,26 @@ class AppState {
 
 	// GUI Output
 	updateCurrentUserURL(url, save_state = true) {
-		this.state.current_user_url = url.toString();
+		const server_url = this.getSetting('server_url');
+		url = url.toString();
+		if(server_url && typeof server_url == 'string' && url.startsWith(server_url + '/chat_forwarding')){ // check for chat_forwarding
+			try{
+				const urlParams = new URLSearchParams(url.split('?')[1]);
+				const cid 		= urlParams.get('cid');
+				const tid		= urlParams.get('tid');
+				if(cid && !isNaN(cid*1) && tid && !isNaN(tid*1)){
+					this.forwardedChatID 	= cid*1;
+					this.forwardedThreadID 	= tid*1;
+					// Close the formContainer so that the user can see the chat that they are being forwarded to
+					$('#nav-close').trigger('click');
+				}
+			}catch(e){
+				console.error(e);
+				return;
+			}
+		}
+		// Update the state of the app
+		this.state.current_user_url = url;
 		$('#current_url').attr('title',this.getCurrentURL()).empty().append(this.getShortURL());
 		if(save_state) this.saveState();
 	}
@@ -1520,18 +1528,23 @@ class AppState {
 	}
 
 	fetchNotifications(){
-		const server_url = this.getSetting('server_url');
+		const server_url 		= this.getSetting('server_url');
 		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')) return;
-		const notificationURL = `${server_url}/notifications`;
-		const nowSeconds = Math.floor(Date.now() / 1000);
-		const notifsFetchedAt = this.state?.notifsFetchedAt || 0;
-		const getNotifsInterval = (!isNaN(notifsFetchedAt*1) && notifsFetchedAt > 0)? nowSeconds - notifsFetchedAt: 2_629_800;
-		const formData = new FormData();
-		const captcha_id = this.getSelectedWalletID();
+		const notificationURL 	= `${server_url}/notifications`;
+		const formData 			= new FormData();
+		const captcha_id	 	= this.getSelectedWalletID();
 		if(!captcha_id || !(captcha_id in this.state.invoices)) return; // User may not have selected a wallet yet.
+		const invoice 			= this.state.invoices?.[captcha_id] || null;
+		if(!invoice || typeof invoice != 'object') return;
+
+		// tell the server how long ago you want notifications for
+		const nowSeconds 		= Math.floor(Date.now() / 1000); // time since epoch in seconds
+		const notifsFetchedAt 	= invoice?.notifsFetchedAt || 0; // time since epoch in seconds
+		const getNotifsInterval = (!isNaN(notifsFetchedAt*1) && notifsFetchedAt > 60)? Math.floor(nowSeconds - notifsFetchedAt): 2_629_800; // difference in seconds, max 30 days
 		formData.append('captcha_id', captcha_id);
-		formData.append('seconds', getNotifsInterval);
+		formData.append('seconds', getNotifsInterval); // server expects seconds since last fetch, not seconds since epoch
 		formData.append('secret', this.getInvoiceSecret(captcha_id));
+
 		fetch(notificationURL, {
 			method: 'POST',
 			body: formData
@@ -1553,24 +1566,83 @@ class AppState {
 				this.feed(data.error, true);
 				return;
 			}
+			const captcha_id 	= this.getSelectedWalletID();
+			if(!captcha_id || !(captcha_id in this.state.invoices)) return; // User may not have selected a wallet yet.
+			const invoice 		= this.state.invoices?.[captcha_id] || null;
+			if(!invoice || typeof invoice != 'object') return;
+			invoice.newThreads 	= Array.isArray(invoice.newThreads)? invoice.newThreads: [];
+			invoice.newReplies 	= Array.isArray(invoice.newReplies)? invoice.newReplies: [];
 			var new_threads 	= data?.new_threads || [];
-			this.newThreads		= Array.isArray(new_threads)? JSON.parse(JSON.stringify(new_threads)): [];
+				new_threads 	= Array.isArray(new_threads)? JSON.parse(JSON.stringify(new_threads)): [];
 			var new_replies 	= data?.new_replies || [];
-			this.newReplies		= Array.isArray(new_replies)? JSON.parse(JSON.stringify(new_replies)): [];
-			const total_notifs 	= new_threads.length + new_replies.length;
-			$('#notification_count').empty().append(total_notifs.toString());
-			if(total_notifs > 0){
-				$('#notifications_opener').removeClass('faded');
-			}else{
-				$('#notifications_opener').addClass('faded');
+				new_replies 	= Array.isArray(new_replies)? JSON.parse(JSON.stringify(new_replies)): [];
+			var ignore_ids		= invoice?.notifsIgnoreIDs || [];
+				ignore_ids		= Array.isArray(ignore_ids)? ignore_ids: [];
+			var new_trd_count	= 0,
+				new_rpy_count	= 0;
+			for(var i=0; i<new_threads.length; i++){
+				const nt = new_threads[i];
+				const nt_id = nt?.id; // chat id
+				// Ignore this thread if it is in the ignore list
+				if(!nt_id || isNaN(nt_id*1) || ignore_ids.indexOf(nt_id*1) > -1) continue;
+				// Add this to this.newThreads if it is not already there
+				var duplicate_found = false;
+				for(var j=0; j<invoice.newThreads.length; j++){
+					if(invoice.newThreads[j].id == nt_id){
+						duplicate_found = true;
+						break;
+					}
+				}
+				if(duplicate_found) continue;
+				invoice.newThreads.push(nt);
+				new_trd_count++;
 			}
-			this.state.notifsFetchedAt = nowSeconds;
+			for(var i=0; i<new_replies.length; i++){
+				const nr = new_replies[i];
+				const nr_id = nr?.id; // chat id
+				// Ignore this reply if it is in the ignore list
+				if(!nr_id || isNaN(nr_id*1) || ignore_ids.indexOf(nr_id*1) > -1) continue;
+				// Add this to invoice.newReplies if it is not already there
+				var duplicate_found = false;
+				for(var j=0; j<invoice.newReplies.length; j++){
+					if(invoice.newReplies[j].id == nr_id){
+						duplicate_found = true;
+						break;
+					}
+				}
+				if(duplicate_found) continue;
+				invoice.newReplies.push(nr);
+				new_rpy_count++;
+			}
+			this.updateNotifCount(captcha_id);
+			invoice.notifsFetchedAt = nowSeconds;
 			this.saveState();
 		})
 		.catch(error => {
 			this.feed('There has been a problem with your fetch operation. See console.', true);
 			console.error(error);
 		});
+	}
+
+	updateNotifCount(captcha_id){
+		var total_notifs = 0;
+		const invoice = this.state.invoices?.[captcha_id] || null;
+		if(invoice && typeof invoice == 'object'){
+			invoice.newThreads 		= Array.isArray(invoice.newThreads)? invoice.newThreads: [];
+			invoice.newReplies 		= Array.isArray(invoice.newReplies)? invoice.newReplies: [];
+			var ignore_ids			= invoice?.notifsIgnoreIDs || [];
+				ignore_ids			= Array.isArray(ignore_ids)? ignore_ids: [];
+			// get non-ignored ids
+			const new_thread_ids 	= invoice.newThreads.map(nt => nt.id).filter(id => ignore_ids.indexOf(id*1) < 0);
+			const new_reply_ids 	= invoice.newReplies.map(nr => nr.id).filter(id => ignore_ids.indexOf(id*1) < 0);
+			total_notifs 			= new_thread_ids.length + new_reply_ids.length;
+		}
+		$('#notification_count').empty().append(total_notifs.toString());
+		if(total_notifs > 0){
+			$('#notifications_opener').removeClass('faded');
+		}else{
+			$('#notifications_opener').addClass('faded');
+		}
 	}
 
 	updateConversionRates(){ // TODO: Update this so it uses BTC -OR- the crypto code of the current wallet.
@@ -1882,6 +1954,143 @@ class AppState {
 		$('#form_container').append(settingsForm);
 		$('#form_container').slideDown(200);
     }
+
+	urlAutoThreadAutoChat(url, thread_id = 0, chat_id = 0){
+		if(!url || typeof url != 'string' || url.length < 1) return;
+		if(!thread_id || isNaN(thread_id*1) || thread_id < 1) return;
+		const hasQuery 		= url.indexOf('?') > -1;
+		const querySymbol 	= hasQuery? '&': '?';
+		var newURL = `${url}${querySymbol}catsupnorthautothreadid=${thread_id}`;
+		if(newURL.endsWith('?') || newURL.endsWith('&')) newURL = newURL.slice(0,-1);
+		if(chat_id && !isNaN(chat_id*1) && chat_id > 0){
+			newURL += `&catsupnorthautochatid=${chat_id}`;
+		}
+		return newURL;
+	}
+
+	renderNotification(o,target_jquery_object, typ){
+		try{
+			const server_url = this.getSetting('server_url');
+			if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')) throw new Error('No server URL set.');
+			const short_url = o.url.length > 30? o.url.substr(0,30) + '...': o.url;
+			var channel 	= o.channel? `<span class="chat_info pull-right">in&nbsp;${o.channel}</span>`: '';
+			var alias 		= o.name? `<span class="chat_info">${o.name}</span>`: '';
+			if(o.name && o.name.startsWith('$')){
+				alias = `<span class="chat_info"><a href="${server_url}/u/${o.name}" target="_blank">${o.name}</a></span>`;
+				channel = o.channel? `<span class="chat_info pull-right">in&nbsp;<a href="${server_url}/u/${o.name}/${o.channel}">${o.channel}</a></span>`: '';
+			}
+			const xMark = this.heroicon('x-mark') || '❌';
+			target_jquery_object.append(`<div class="notification-${typ}" data-chat-id="${o.id}" style="border-top:1px solid rgba(125,125,125,0.4);">
+				<a href="${server_url}/chat_forwarding?cid=${o.id}" title="${o.url}" target="_blank">${short_url}</a><br>
+				${o.content}<br>
+				${alias}${channel}
+				<a href="#" style="opacity:0.7;font-style:italic;font-size:0.7em;" class="pull-right error mark_notif_read" data-id="${o.id}" data-type="${typ}">${xMark} mark as read</a>
+			</div>`);
+		}catch(e){
+			console.error(e);
+		}
+	}
+
+	buildNotificationsForm() {
+		const captcha_id 	= this.getSelectedWalletID();
+		if(!captcha_id || !(captcha_id in this.state.invoices)) return; // User may not have selected a wallet yet.
+		const invoice 		= this.state.invoices?.[captcha_id] || null;
+		if(!invoice || typeof invoice != 'object') return;
+		$('#new_replies_div').add('#new_threads_div').add('#notif_replies_link').add('#notif_threads_link').empty();
+		$('#nav_dropdown').css('display','block');
+		$('.internal_nav').css('display','none');
+		$('#form_container').empty().show();
+		$('#nav-close').show();
+		const repliesCount	= invoice.newReplies.length;
+		const threadsCount	= invoice.newThreads.length;
+		const notifCount 	= repliesCount + threadsCount;
+		if(notifCount < 1){
+			$('#form_container').append('<h2>No New Notifications</h2>');
+			$('#form_container').show();
+			return;
+		}
+		const newThreadsDiv = $(`<div id="new_threads_div" style="display:none;"></div>`);
+		const newRepliesDiv = $(`<div id="new_replies_div" style="display:none;"></div>`);
+		const threadsLink	= $(`<a href="#" id="notif_threads_link" style="opacity:0.7;font-size:1.2em;font-weight:600;"><span id="notif_threads_link_count"></span> Thread${( threadsCount == 1? '': 's' )}</a>`);
+		const repliesLink	= $(`<a href="#" id="notif_replies_link" style="opacity:0.7;font-size:1.2em;font-weight:600;"><span id="notif_replies_link_count"></span> Repl${( repliesCount == 1? 'y': 'ies' )}</a>`);
+		const xMark			= this.heroicon('x-mark') || '❌';
+		const repliesRead	= $(`<a href="#" id="mark_all_read" style="opacity:0.7;font-style:italic;font-weight:600;" class="pull-right error mark_notif_read" data-id="*" data-type="replies">${xMark} Mark All Read</a>`);
+		const threadsRead	= $(`<a href="#" id="mark_all_read" style="opacity:0.7;font-style:italic;font-weight:600;" class="pull-right error mark_notif_read" data-id="*" data-type="threads">${xMark} Mark All Read</a>`);
+		newRepliesDiv.append(`New replies to your chats.`,repliesRead,'<br><br>');
+		newThreadsDiv.append(`New threads from users that<br>you follow.`,threadsRead,'<br><br>');
+		threadsLink.on('click', (e) => {
+			e.preventDefault();
+			this.state.notifsMode = 'threads';
+			$('#notif_threads_link').css({opacity:'1'});
+			$('#notif_replies_link').css({opacity:'0.7'});
+			$('#new_replies_div').hide();
+			$('#new_threads_div').show();
+		});
+		repliesLink.on('click', (e) => {
+			e.preventDefault();
+			this.state.notifsMode = 'replies';
+			$('#notif_replies_link').css({opacity:'1'});
+			$('#notif_threads_link').css({opacity:'0.7'})
+			$('#new_threads_div').hide();
+			$('#new_replies_div').show();
+		});
+		var ignoreIDs = invoice?.notifsIgnoreIDs || [];
+			ignoreIDs = Array.isArray(ignoreIDs)? ignoreIDs: [];
+		var actualRepliesCount 	= 0,
+			actualThreadsCount 	= 0,
+			actualNotifsCount 	= 0;
+		for(var i=0; i<repliesCount; i++){
+			if(ignoreIDs.indexOf(invoice.newReplies[i].id) > -1) continue;
+			this.renderNotification(invoice.newReplies[i],newRepliesDiv,'replies');
+			actualRepliesCount++;
+		}
+		for(var i=0; i<threadsCount; i++){
+			if(ignoreIDs.indexOf(invoice.newThreads[i].id) > -1) continue;
+			this.renderNotification(invoice.newThreads[i],newThreadsDiv,'threads');
+			actualThreadsCount++;
+		}
+		actualNotifsCount = actualRepliesCount + actualThreadsCount;
+		const bell_icon = this.heroicon('bell') || '🔔';
+		$('#form_container').append(`<h2>${bell_icon} ${actualNotifsCount} Notification${( actualNotifsCount == 1? '': 's' )}</h2>`);
+		$('#form_container').append(threadsLink,'&nbsp;&nbsp;|&nbsp;&nbsp;',repliesLink,'<br><br>',newRepliesDiv,newThreadsDiv);
+		$('#notif_threads_link_count').empty().append(actualThreadsCount);
+		$('#notif_replies_link_count').empty().append(actualRepliesCount);
+		if(this.state.notifsMode == 'threads'){
+			threadsLink.trigger('click');
+		}else if(this.state.notifsMode == 'replies'){
+			repliesLink.trigger('click');
+		}else{
+			if(threadsCount > 0){
+				threadsLink.trigger('click'); // sets this.state.notifsMode to 'threads'
+			}else{
+				repliesLink.trigger('click'); // sets this.state.notifsMode to 'replies'
+			}
+		}
+		$('.mark_notif_read').on('click', (e) => {
+			e.preventDefault();
+			const targ 			= $(e.currentTarget);
+			const id 			= targ.attr('data-id');
+			const typ   		= targ.attr('data-type');
+			const captcha_id 	= this.getSelectedWalletID();
+			if(!captcha_id || !(captcha_id in this.state.invoices)) return; // User may not have selected a wallet yet.
+			const invoice 		= this.state.invoices?.[captcha_id] || null;
+			if(!invoice || typeof invoice != 'object') return;
+			invoice.notifsIgnoreIDs = Array.isArray(invoice.notifsIgnoreIDs)? invoice.notifsIgnoreIDs: [];
+			if(id == '*'){ // ignore all of this type.
+				$(`.notification-${typ}`).each(function(){
+					const nid = $(this).attr('data-chat-id');
+					if(nid && !isNaN(nid*1)) invoice.notifsIgnoreIDs.push(nid*1);
+					console.log(nid,invoice.notifsIgnoreIDs);
+				});
+			}else if(!isNaN(id*1)){
+				invoice.notifsIgnoreIDs.push(id*1);
+			}
+			invoice.notifsIgnoreIDs = [...new Set(invoice.notifsIgnoreIDs)];
+			this.saveState();
+			this.buildNotificationsForm();
+		});
+		this.updateNotifCount(captcha_id);
+	}
 
 	buildChannelList(){
 		$('#form_container').empty();
@@ -2425,12 +2634,13 @@ class AppState {
 				const targ 			= $(e.currentTarget);
 				this.currentCaptcha = targ.val();
 				$('#spend_input').trigger('keyup');
+				$('#nav-close').trigger('click');
 				this.saveState();
 
 				// Reload the thread or get threads again when user changes wallet.
 				// This allows the follow links to update.
 				this.updateFollowList(this.currentCaptcha);
-				this.updateConversionRates();
+				this.updateConversionRates(); // Also fetches user's notifications
 				// verified users only
 				this.loadChannelSelector();
 			});
@@ -2467,7 +2677,7 @@ class AppState {
                 '<select id="buy_curr" name="select-input" required="">' + 
                     '<option value="usd">USD</option>' + 
                 '</select>' + 
-                '<input type="submit" value="Buy!">' + 
+                '<input type="submit" value="Create Wallet!">' + 
             '</form>'
         );
 		buyForm.submit((e) => {
@@ -2659,6 +2869,7 @@ class AppState {
 									return;
 								}
 								if(data.error){
+									console.log(data);
 									app.feed(data.error, true);
 								}else if(data.msg){
 									app.feed(data.msg);
