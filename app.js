@@ -6,6 +6,8 @@ class AppState {
 		this.convUpdatedAt		= null; // Last time conversion rates were updated in seconds from epoch
 		this.state				= {}; // store notifications until users mark read.
 
+		this.modMode			= false; // turns on mod features like universal blur permission. Server will check if wallet is a mod wallet.
+
 		// chat forwarding
 		this.forwardedChatID	= null; // chat id to forward users to after visiting the /chat_forwarding page
 		this.forwardedThreadID	= null; // thread id to forward users to after visiting the /chat_forwarding page
@@ -19,23 +21,42 @@ class AppState {
 		this.settingsDefault 	= {
 		    server_url:				"https://catsupnorth.com", // fallback server url
 			fiat_code:				'USD',
+			load_images:			false, // Thread and chat images loaded via Markdown
 			hide_free_threads:		false,
 			hide_free_chats:		false,
 			show_crypto_balance:	false,
 			show_sats_balance:		true,
 			show_fiat_balance:		true,
-			show_conversions:		[ "BTC_USD", "XMR_USD" ]
+			show_conversions:		[ "BTC_USD", "XMR_USD" ],
+			blur_setting:			'blur', // show, blur, or hide
+			dwell_time_per_dollar:	0, // how long a superchat stays visible per dollar spent
 		};
         this.settingsSchema 	= {
             server_url:				'string',
             fiat_code:				'string',
+			load_images:			'boolean', // Thread and chat images loaded via Markdown
             hide_free_threads:		'boolean',
             hide_free_chats:		'boolean',
 			show_crypto_balance:	'boolean',
 			show_sats_balance:		'boolean',
 			show_fiat_balance:		'boolean',
-			show_conversions:		'array'
+			show_conversions:		'array',
+			blur_setting:			'string',
+			dwell_time_per_dollar:	'number',
         };
+		this.settingsDescriptions = {
+			server_url:				'The URL of the server to send chats to.',
+			fiat_code:				'The fiat currency code to use for conversion rates.',
+			load_images:			'Auto-load images in threads and chats. Not recommended.',
+			hide_free_threads:		'Hide threads not made using a wallet.',
+			hide_free_chats:		'Hide chats not made using a wallet.',
+			show_crypto_balance:	'Show the crypto balance of your wallet. Turn off when streaming.',
+			show_sats_balance:		'Show the atomic unit balance of your wallet. Turn off when streaming.',
+			show_fiat_balance:		'Show the fiat balance in your wallet. Turn off when streaming.',
+			show_conversions:		'Which conversion rates to show (must be available from server).',
+			blur_setting:			'How to handle blurred content. You can either show them, blur them (you can click to view), or hide them all together.',
+			dwell_time_per_dollar:	'How many seconds a chat with tip is highlighted per dollar spent. Set to zero to hide if you are not streaming.',
+		};
 		this.settingsLimits 	= {
 			refresh_threads_microseconds: 	[ 2500, 60000 ], // 2.5 seconds to 60 seconds
 			refresh_chat_microseconds: 		[ 550,  5000  ],  // 0.55 seconds to 5 seconds
@@ -57,6 +78,14 @@ class AppState {
 		this.settingsSchema.server_url = 'string';
 		this.loadState();
 	}
+
+	startModMode(){ // manually called in the console to enable mod features
+		this.modMode = true;
+	}
+
+	stopModMode(){ // manually called in the console to disable mod features
+		this.modMode = false;
+	}
 	
 	feed(arg, err = false, cloneBefore = null){
 		if(this.skipFeed && !err){ // used when autoloading threads or chats right after user action
@@ -70,10 +99,10 @@ class AppState {
 		// Check if cloneBefore is a jquery object with length > 0 and then add a clone of #feed before it (remove id first).
 		if(cloneBefore && cloneBefore.length > 0){
 			const feed_clone = $('#feed').clone().removeAttr('id').addClass('feed_clone');
-			feed_clone.append('<br>').css({display:'none', width:'100%', minWidth: '100%'});
+			feed_clone.prepend('<br><br>').append('<br><br>').css({display:'none', width:'100%', minWidth: '100%'});
 			feed_clone.insertBefore(cloneBefore);
 			feed_clone.slideDown(200,()=>{
-				setTimeout(() => { $('.feed_clone').slideUp(200); }, 5000); // The next feed message will remove this junk clone
+				setTimeout(() => { $('.feed_clone').slideUp(200,function(){ $(this).remove(); }); }, 5000); // The next feed message will remove this junk clone
 			});
 		}
 	}
@@ -83,9 +112,160 @@ class AppState {
 		$('.new_msg_indicator').empty();
 	}
 
-	_decodeHTMLEntities(text) {
-		let e = $(`<div>${text.toString()}</div>`);
-		return e.text();
+	_decodeHTMLEntities(text) { // Used to decode HTML entities in chat messages but preserves line breaks.
+		text	= (text && typeof text == "string")? text: '';
+		text 	= text.replace(/(?:\r\n|\r|\n)/g, '__tmp_br_placeholder__');
+		text	= text.replace(/<br>/g, '__tmp_br_placeholder__');
+		let el 	= $(`<div>${text}</div>`);
+		return el.text().replace(/__tmp_br_placeholder__/g, '\n');
+	}
+
+	parseMarkdown(markdown) {
+		markdown = this._decodeHTMLEntities(markdown);
+
+		if(!markdown || typeof markdown != 'string' || markdown.length < 1) return '';
+
+		// Escape HTML special characters
+		markdown = markdown
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;");
+		
+		// Handle code blocks (```) - Multiline
+		markdown = markdown.replace(/```([\s\S]+?)```/g, '<pre><code>$1</code></pre>');
+		
+		// Handle inline code (`code`)
+		markdown = markdown.replace(/`([^`]+)`/g, '<code>$1</code>');
+		
+		// Convert headings (e.g., # Heading)
+		markdown = markdown.replace(/^#{6}\s(.+)/gm, '<h6>$1</h6>')
+					   .replace(/^#{5}\s(.+)/gm, '<h5>$1</h5>')
+					   .replace(/^#{4}\s(.+)/gm, '<h4>$1</h4>')
+					   .replace(/^#{3}\s(.+)/gm, '<h3>$1</h3>')
+					   .replace(/^#{2}\s(.+)/gm, '<h2>$1</h2>')
+					   .replace(/^#\s(.+)/gm, '<h1>$1</h1>');
+		
+		// Convert bold (**bold**)
+		markdown = markdown.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+		
+		// Convert italic (*italic*)
+		markdown = markdown.replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+		// convert images ![alt](url)
+		markdown = markdown.replace(/!\[(.*?)\]\((.*?)\)/g, '<img data-src="$2" src="" alt="$1" style="max-width:100%;">');
+		
+		// Convert links [text](url)
+		markdown = markdown.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
+		
+		// Convert unordered lists (- item)
+		markdown = markdown.replace(/^- (.*)$/gm, '<li>$1</li>');
+		markdown = markdown.replace(/(<li>.*<\/li>)/g, '<ul>$1</ul>');
+		
+		// Convert ordered lists (1. item)
+		markdown = markdown.replace(/^\d+\. (.*)$/gm, '<li>$1</li>');
+		markdown = markdown.replace(/(<li>.*<\/li>)/g, '<ol>$1</ol>');
+		
+		// Convert new lines to <br> tags for line breaks
+		markdown = markdown.replace(/\n/g, '<br>');
+
+		return markdown.split('<br>'); // return array of lines, first line used for preview.
+	}
+
+	contentPreview(content, chat_id, thread_id){ // if thread_id is a number, create an open thread link.
+		const preview_lim		= 100;
+		const markdown_lines 	= this.parseMarkdown(content);
+		var first_line 			= this._decodeHTMLEntities(markdown_lines?.[0] || '');
+		const first_line_len 	= first_line.trim().length;
+		first_line				= first_line_len > preview_lim? first_line.substring(0, preview_lim) + '...': first_line;
+		var img_count 			= 0;
+		for(var i=0; i<markdown_lines.length; i++){
+			const ln = markdown_lines[i];
+			if(ln.includes('<img')) img_count++;
+		}
+		const content_div  		= $(`
+			<div class="content_container" data-chat-id="${chat_id}">
+				<span class="content_preview">${first_line}</span>
+				<div class="markdown_content" style="display:none;">${markdown_lines.join('<br>')}</div>
+			</div>`);
+		if(first_line_len > preview_lim || markdown_lines.length > 1 || first_line_len < 1){
+			content_div.append('<br>');
+			const charCount  	= content.length;
+			const expandIcon 	= this.heroicon('chevron-down') || '↓';
+			const verb 			= img_count > 0? `img${(img_count  == 1? '': 's')} (${img_count})`: `more (${charCount})`;
+			const expandLink 	= $(`<a class="expand_content" data-chat-id="${chat_id}" data-verb="${verb}">${verb} ${expandIcon}</a>`);
+			expandLink.on('click', (e) => {
+				e.preventDefault();
+				const ctarg 		= $(e.currentTarget);
+				ctarg.css({opacity:0});
+				const chatId 		= ctarg.attr('data-chat-id');
+				const contentCont	= $(`.content_container[data-chat-id="${chatId}"]`);
+				const contentPrev	= contentCont.find('.content_preview');
+				const markdownCont	= contentCont.find('.markdown_content');
+				if(markdownCont.is(':visible')){ // if visible, we hide the markdown and show the preview
+					const icon = this.heroicon('chevron-down') || '↓';
+					const verb = ctarg.attr('data-verb');
+					ctarg.empty().append(`${verb} ${icon}`);
+					contentPrev.slideDown(200);
+					markdownCont.slideUp(200);
+				}else{ // show markdown and load images
+					markdownCont.find('img').each((i, img) => {
+						const src = $(img).attr('data-src');
+						if(src && src.length > 0) $(img).attr('src', src);
+					});
+					const icon = this.heroicon('chevron-up') || '↑';
+					ctarg.empty().append(`less ${icon}`);
+					contentPrev.slideUp(200);
+					markdownCont.slideDown(200);
+				}
+				ctarg.animate({opacity:1}, 200);
+			});
+			content_div.append(expandLink);
+		}
+
+		if(thread_id){ // div with thread_opener link
+			const openIcon 			= this.heroicon('chevron-right') || '→';
+			const loadThreadLink 	= $(`<a class="thread_opener pull-right" data-thread-id="${thread_id}" data-chat-id="${chat_id}">open thread ${openIcon}</a>`);
+			loadThreadLink.on('click', (e) => {
+				e.preventDefault();
+				if(this.paused) return;
+				// Get thread ID from the clicked element
+				const ctarg 	= $(e.currentTarget);
+				const threadId 	= ctarg.attr('data-thread-id');
+				if(ctarg.hasClass('password_required')){
+					const existingPassForm = $(`.thread_pass_form[data-thread-id="${threadId}"]`);
+					if(existingPassForm.length > 0){ // user decides not to join thread by clicking again
+						// remove all existing pass forms
+						$('.thread_pass_form').remove();
+						return;
+					}
+					const cachedPass = this.getCachedPass(threadId);
+					const cachedPassStr = cachedPass? ` value="${cachedPass}"`: '';
+					const passForm = $(
+						`<form class="thread_pass_form" data-thread-id="${threadId}" style="display:none;">
+							<input type="hidden" name="thread_id" value="${threadId}">
+							<input type="password" name="password" placeholder="Thread Password"${cachedPassStr}>
+							<input type="submit" value="Login to Thread ${threadId}">
+						</form>`
+					);
+					passForm.on('submit', (e) => {
+						e.preventDefault();
+						const formData 	= new FormData(e.target);
+						const tid_val 	= formData.get('thread_id');
+						const pass_val	= this.cachePass(tid_val, formData.get('password'));
+						this.loadThread(tid_val, pass_val);
+					});
+					ctarg.after(passForm);
+					passForm.slideDown(200, ()=>{
+						passForm.find('input[type="password"]').focus();
+					});
+				}else{
+					this.loadThread(threadId);
+				}
+			});
+			content_div.append(loadThreadLink);
+		}
+
+		return content_div;
 	}
 
 	pause() {
@@ -345,7 +525,7 @@ class AppState {
 		const formData 		= new FormData();
 		if(captcha_id != 'free'){ // can be null for free chat
 			formData.append('captcha_id', captcha_id);
-			formData.append('secret', this.state.invoices[captcha_id].secret);
+			formData.append('secret', (this.state.invoices?.[captcha_id] || {})?.secret);
 			formData.append('spend', spend);
 			if(spend && !isNaN(spend*1) && spend > 0) this.transactionCaptcha = captcha_id;
 		}
@@ -680,7 +860,7 @@ class AppState {
 		});
 	}
 	
-	reactDiv(chat_id, timestamp = null, sender_crypto_wallets = null){ // reply_count is only used by threads.
+	reactDiv(chat_id, timestamp = null, sender_crypto_wallets = null, is_thread = false){ // reply_count is only used by threads.
 		const container = $('<span class="reaction_container"></span>');
 		var date_str = '';
 		if(timestamp && typeof timestamp == 'string' && timestamp.length > 0){
@@ -724,13 +904,13 @@ class AppState {
 					${this.heroicon('chevron-up')}
 					<span class="reaction_count like_count" data-chat-id="${chat_id}">0</span>
 				</a>
-				<a href="#" class="reaction_button dislike_button" data-chat-id="${chat_id}" style="padding-left:3px;">
+				<a href="#" class="reaction_button dislike_button" data-chat-id="${chat_id}" style="padding-left:3px;padding-right:3px;">
 					${this.heroicon('chevron-down')}
 					<span class="reaction_count dislike_count" data-chat-id="${chat_id}">0</span>
 				</a>
 			</span>`
 		);
-		container.prepend('<br>');
+		if(is_thread) container.prepend('<br>');
 
 		// Cross-posting and replies
 		var crossPostLink = $(`<a href="#" class="cross_post_link" data-chat-id="${chat_id}" title="Cross-Post chat to another thread."></a>`);
@@ -858,6 +1038,7 @@ class AppState {
 	}
 
 	updateReactions(reactions){
+		this.addBlurFunctionality();
 		if(!reactions || !Array.isArray(reactions)) return;
 		const walletId = this.getCurrentWalletId();
 		var like_counts = {};
@@ -902,8 +1083,6 @@ class AppState {
 				if(o.my_vote == 'down') dislike_btn.addClass('my_reaction');
 			}
 		}
-
-		// Add event listeners to reaction buttons
 
 		// Get invoice_ids for invoices that have secrets
 		if(Object.keys(this.state.invoices).length < 1){ // User cannot react without a secret
@@ -1056,31 +1235,51 @@ class AppState {
 		});
 	}
 
-	loadThread(threadId = null, password = null, force_restart = false){
-		if(!threadId || isNaN(threadId*1)) threadId = this.getCurrentThreadID();
-		if(this.paused || !threadId) return;
-		this.midRequest = true;
+	addBlurLink(container){
+		const chat_id 	= $(container).attr('data-id');
+		if(!chat_id || isNaN(chat_id*1)) return;
+		$(container).find('.blur_link').remove();
+		const blur_link = $(`<a href="#" class="blur_link" data-chat-id="${chat_id}" title="Blur this item." style="padding-right:3px;"></a>`);
+		blur_link.append(this.heroicon('eye-slash') || 'X');
+		$(container).prepend(blur_link);
+	}
 
+	addBlurFunctionality(){
+		const threads 	= this.modMode? $('.thread'): null;
+		const chats 	= this.modMode? $('.chat').add('.original_chat'): $('.is_reply_to_me');
+		if(threads && threads.length > 0){
+			threads.each((index, thread) => { this.addBlurLink(thread); });
+		}
+		if(chats && chats.length > 0){
+			chats.each((index, chat) => { this.addBlurLink(chat); });
+		}
+	}
+
+	loadThread(threadId = null, password = null, force_restart = false) {
+		if (!threadId || isNaN(threadId * 1)) threadId = this.getCurrentThreadID();
+		if (this.paused || !threadId) return;
+		this.midRequest = true;
+	
 		// Check if the conversion rates are current within the last minute (also fetches notifications)
 		const secondsSinceEpoch = Math.round(new Date().getTime() / 1000);
 		const timeSinceConvUpdate = secondsSinceEpoch - this.convUpdatedAt;
-		if(timeSinceConvUpdate > 60) this.updateConversionRates();
-
-        this.setCurrentThreadID(threadId);
+		if (timeSinceConvUpdate > 60) this.updateConversionRates();
+	
+		this.setCurrentThreadID(threadId);
 		this.setCurrentCaptchaFromSelector();
 		$('.thread').remove(); // hide all threads
-		$('#chat_input').attr('placeholder','Chat in this thread...');
-		$('#create_thread_options').css({display: 'none'});
-		if(force_restart) $('.chat').remove(); // clear all chats
-		const lastChat 	= $('.chat').not('.cross_post').last();
-		const startMode = lastChat.length > 0? false: true;
-		if(startMode && threadId != this.lastThreadLoaded){
+		$('#chat_input').attr('placeholder', 'Chat in this thread...');
+		$('#create_thread_options').css({ display: 'none' });
+		if (force_restart) $('.chat').remove(); // clear all chats
+		const lastChat = $('.chat').add('.original_chat').not('.cross_post').last();
+		const startMode = lastChat.length > 0 ? false : true;
+		if (startMode && threadId != this.lastThreadLoaded) {
 			$('#chat_input').focus();
 			this.loadingMsg(`Loading Thread ${threadId}`);
 			this.allThreadChatIds = [];
 		}
 		this.lastThreadLoaded = threadId;
-		const formData 	= new FormData();
+		const formData = new FormData();
 		formData.append('thread_id', threadId);
 		if (!password) password = this.getCachedPass(threadId);
 		if (password) formData.append('password', password);
@@ -1090,10 +1289,13 @@ class AppState {
 			return;
 		}
 		const threadEndpoint = `${server_url}/get_thread_chats`;
-		if(!startMode && lastChat && lastChat.length > 0){
-			formData.append('date_submitted_after',lastChat.attr('data-date-submitted'));
+		if (startMode) {
+			$('#main_thread_chat').empty(); // Clear the main thread chat container
 		}
-		if(this.currentCaptcha){
+		if (!startMode && lastChat && lastChat.length > 0) {
+			formData.append('date_submitted_after', lastChat.attr('data-date-submitted'));
+		}
+		if (this.currentCaptcha) {
 			formData.append('captcha_id', this.currentCaptcha);
 			formData.append('secret', this.getInvoiceSecret(this.currentCaptcha));
 		}
@@ -1101,159 +1303,179 @@ class AppState {
 			method: 'POST',
 			body: formData
 		})
-		.then(response => {
-			if (response.ok) {
-				return response.text();
-			} else {
-				throw new Error('Network response was not ok');
-			}
-		})
-		.then(json => {
-			if(startMode){
-				$('#gui').empty();	
-				this.loadWalletSelector();
-			}
-			const data = typeof json == 'string'? JSON.parse(json): json;
-			if(!data || typeof data != 'object' || !('chats' in data)){
-				this.feed('Server response parse failed.', true);
-				return;
-			}
-			if (data.error) {
-				this.feed(data.error, true);
-				this.skipFeed = true;
-				this.getThreads();
-				return;
-			}
-			if(startMode) this.feed(data?.msg || 'Thread loaded.');
-			const threadChats = data.chats;
-
-			this.addThreadChatIds(threadChats); // Needed to see if X-Posts should be added directly to the thread.
-			
-			// Sort the chats by date_submitted
-			threadChats.sort((a,b) => {
-				if(a.date_submitted < b.date_submitted) return -1;
-				if(a.date_submitted > b.date_submitted) return 1;
-				return 0;
-			});
-
-			const hide_free_chats = this.getSetting('hide_free_chats');
-
-			threadChats.forEach( chat => {
-				const isMe 		= chat?.is_me || false;
-				const isFree 	= chat?.is_free || false;
-				const isTop 	= (!chat.reply_to_id && chat.thread_id == threadId)? true: false;
-				const isSuper	= (chat.superchat && !isNaN(chat.superchat*1) && chat.superchat > 0)? true: false;
-
-				if(hide_free_chats && isFree) return; // Do not add free chats if setting is enabled
-
-				// Do not add chats that are already in the thread
-				if($(`.chat[data-id="${chat.chat_id}"]`).length > 0) return; // chat already rendered, skip
-
-				// Do not re-render top chat ever (it should always load)
-				if(isTop && !startMode) return;
-
-				if(!startMode && this.skipAutoScroll && !isTop) this.newMessages++;
-
-				var chatDivClasses 	= [],
-					superChatStr	= '',
-					chatStr			= this._decodeHTMLEntities(chat.chat_content.toString());
-				if(isFree) 	chatDivClasses.push('free_chat');
-				if(isMe) 	chatDivClasses.push('my_chat');
-				if(isTop){
-					chatDivClasses.push('original_chat');
-				}else{
-					chatDivClasses.push('chat');
-					chatDivClasses.push('hidden_chat');
+			.then(response => {
+				if (response.ok) {
+					return response.text();
+				} else {
+					throw new Error('Network response was not ok');
 				}
-				if(isSuper){
-					chatDivClasses.push('superchat');
-					const amount 	= chat.superchat*1;
-					const fiatStr 	= this.satoshiToFiatStr(amount, chat?.sender_crypto_type);
-					const cryptoStr = this.satoshiToCryptoStr(amount, chat?.sender_crypto_type);
-					const star 		= this.heroicon('star-solid') || '⭐';
-					superChatStr 	= `<div class="superchat_amount">${star}&nbsp;${star}&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;${fiatStr}&nbsp;&nbsp;${star}&nbsp;${star}&nbsp;${star}</div>`;
+			})
+			.then(json => {
+				if (startMode) {
+					$('#main_thread_chat').empty();
+					$('#gui').empty();
+					this.loadWalletSelector();
 				}
-				chatDivClasses = chatDivClasses.join(' ');
-				const chatDiv = $(
-					`<div class="${chatDivClasses}" data-id="${chat.chat_id}" data-reply-to-id="${chat.reply_to_id}" data-date-submitted="${chat.date_submitted}" style="display:${(isTop? 'block': 'hidden')};">
-					 	${superChatStr}
-					</div>`
-				);
-				chatDiv.append(this.createFollowLink(chat.alias,isMe,isFree),'&nbsp;&nbsp;',this.createUserPageLink(chat.alias),'&nbsp;&nbsp;',chatStr);
-				chatDiv.append(this.reactDiv(chat.chat_id,chat.date_submitted, chat?.sender_crypto_wallets));
-				// check if cross post
-				if(chat.thread_id != threadId){
-					const shortURL 		= chat.url.length < 30? chat.url: chat.url.substring(0,30) + '...';
-					chatDiv.addClass('cross_post').removeClass('my_chat').removeClass('superchat').prepend(
-						`<br>
-						 <a href="${chat.url}" title="${chat.url}" class="cross_post_ext_link">${shortURL}</a>
-						 <br>
-						 <span class="xpost_info">X-Post from thread ${chat.thread_id}</span>
-						 <br>`
+				const data = typeof json == 'string' ? JSON.parse(json) : json;
+				if (!data || typeof data != 'object' || !('chats' in data)) {
+					this.feed('Server response parse failed.', true);
+					return;
+				}
+				if (data.error) {
+					this.feed(data.error, true);
+					this.skipFeed = true;
+					this.getThreads();
+					return;
+				}
+				if (startMode) {
+					this.feed(data?.msg || 'Thread loaded.');
+				}
+				const threadChats = data.chats;
+	
+				this.addThreadChatIds(threadChats); // Needed to see if X-Posts should be added directly to the thread.
+	
+				// Sort the chats by date_submitted
+				threadChats.sort((a, b) => {
+					if (a.date_submitted < b.date_submitted) return -1;
+					if (a.date_submitted > b.date_submitted) return 1;
+					return 0;
+				});
+	
+				const hide_free_chats = this.getSetting('hide_free_chats');
+	
+				threadChats.forEach(chat => {
+					const isMe = chat?.is_me || false;
+					const isFree = chat?.is_free || false;
+					const isTop = (!chat.reply_to_id && chat.thread_id == threadId) ? true : false;
+					const isSuper = (chat.superchat && !isNaN(chat.superchat * 1) && chat.superchat > 0) ? true : false;
+	
+					if (hide_free_chats && isFree) return; // Do not add free chats if setting is enabled
+	
+					// Do not add chats that are already in the thread
+					if ($(`.chat[data-id="${chat.chat_id}"]`).length > 0) return; // chat already rendered, skip
+	
+					// Do not re-render top chat ever (it should always load once and never again)
+					if (isTop && !startMode) return;
+	
+					if (!startMode && this.skipAutoScroll && !isTop) this.newMessages++;
+	
+					var chatDivClasses = [],
+						superChatStr = '';
+					if (isFree) chatDivClasses.push('free_chat');
+					if (isMe) chatDivClasses.push('my_chat');
+					if (isTop) {
+						chatDivClasses.push('original_chat');
+					} else {
+						chatDivClasses.push('chat');
+						chatDivClasses.push('hidden_chat');
+					}
+					if (isSuper) {
+						chatDivClasses.push('superchat');
+						const amount = chat.superchat * 1;
+						const fiatStr = this.satoshiToFiatStr(amount, chat?.sender_crypto_type);
+						const cryptoStr = this.satoshiToCryptoStr(amount, chat?.sender_crypto_type);
+						const star = this.heroicon('star-solid') || '⭐';
+						superChatStr = `<div class="superchat_amount">${star}&nbsp;${star}&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;${fiatStr}&nbsp;&nbsp;${star}&nbsp;${star}&nbsp;${star}</div>`;
+					}
+					chatDivClasses = chatDivClasses.join(' ');
+					const chatDiv = $(
+						`<div class="${chatDivClasses}" data-id="${chat.chat_id}" data-reply-to-id="${chat.reply_to_id}" data-date-submitted="${chat.date_submitted}" style="display:${(isTop ? 'block' : 'hidden')};">
+						 	${superChatStr}
+						</div>`
 					);
-				}
-				if(chat.reply_to_id == 0 && chat.thread_id == threadId){
-					chatDiv.find('.reply_link').remove();
-					$('#main_thread_chat').empty().append(chatDiv);
-				}else{
-					chatDiv.append(`<div class="reply_container" data-chat-id="${chat.chat_id}"></div>`); // MY reply container
-					const replyContainer = $(`.reply_container[data-chat-id="${chat.reply_to_id}"]`); // THEIR reply container
-					if(replyContainer.length > 0){
-						chatDiv.css({paddingRight:'0'});
-						replyContainer.append(chatDiv);
-					}else{
-						$('#gui').append(chatDiv);
+					chatDiv.append(this.createFollowLink(chat.alias, isMe, isFree), '&nbsp;&nbsp;', this.createUserPageLink(chat.alias), '&nbsp;&nbsp;', this.contentPreview(chat.chat_content, chat.chat_id));
+					chatDiv.append(this.reactDiv(chat.chat_id, chat.date_submitted, chat?.sender_crypto_wallets));
+					// check if cross post
+					if (chat.thread_id != threadId) {
+						const shortURL = chat.url.length < 30 ? chat.url : chat.url.substring(0, 30) + '...';
+						chatDiv.addClass('cross_post').removeClass('my_chat').removeClass('superchat').prepend(
+							`<br>
+							 <a href="${chat.url}" title="${chat.url}" class="cross_post_ext_link">${shortURL}</a>
+							 <br>
+							 <span class="xpost_info">X-Post from thread ${chat.thread_id}</span>
+							 <br>`
+						);
+					}
+	
+					// placement
+					if (chat.reply_to_id == 0 && chat.thread_id == threadId) { // top chat
+						chatDiv.find('.reply_link').remove();
+						$('#main_thread_chat').append(chatDiv);
+					} else { // regular chat
+						const myReplyContainer = $(`<div class="reply_container" data-chat-id="${chat.chat_id}"></div>`);
+						chatDiv.append(myReplyContainer); // MY reply container, add replies to me here.
+						const parentReplyContainer = $(`.reply_container[data-chat-id="${chat.reply_to_id}"]`); // THEIR reply container
+						const myChildren = $(`.chat[data-reply-to-id="${chat.chat_id}"]`);
+						if (parentReplyContainer.length > 0) { // put me in my parent's container
+							chatDiv.css({ paddingRight: '0' });
+							parentReplyContainer.append(chatDiv);
+						} else { // add me to the main thread
+							$('#gui').append(chatDiv);
+						}
+						if (myChildren.length > 0) { // detach and move all stray children from #gui to myReplyContainer. Sometimes chats load out of order from server.
+							myChildren.each((i, el) => {
+								myReplyContainer.append($(el).detach());
+							});
+						}
+					}
+				});
+	
+				// add reply count based on how many chats are in each reply_container
+				$('.chat').each((i, el) => {
+					const reply_container = $(el).find('.reply_container');
+					const reply_count = reply_container.children().length;
+					$(el).find('.chat_reply_count').text(reply_count);
+	
+					// blur functionality (when not in modMode)
+					const reply_to_id = $(el).attr('data-reply-to-id');
+					if (reply_to_id) {
+						const myChatParent = $(`.my_chat[data-id="${reply_to_id}"]`);
+						if (myChatParent.length) $(el).addClass('is_reply_to_me'); // user can blur this chat even if not in modMode
+					}
+				});
+	
+				const newMsgPlur = this.newMessages == 1 ? '' : 's';
+				$('#new_msg_indicator').empty().append(this.newMessages > 0 ? `&nbsp;|&nbsp;${this.newMessages} New Message${newMsgPlur}` : '');
+				this.updateReactions(data?.reactions);
+	
+				// scroll to btm of thread_container
+				if (startMode) {
+					if (this.forwardedChatID && $(`.chat[data-id="${this.forwardedChatID}"]`).length > 0) {
+						this.skipAutoScroll = true;
+						// scroll to the forwarded chat
+						$(`.chat[data-id="${this.forwardedChatID}"]`).get(0).scrollIntoView({ behavior: "smooth", block: "center" });
+					} else {
+						this.skipAutoScroll = false;
+						$('#scroll_to_bottom_container').slideDown(300);
 					}
 				}
-			});
-
-			// add reply count based on how many chats are in each reply_container
-			$('.chat').each((i, el) => {
-				const reply_container 	= $(el).find('.reply_container');
-				const reply_count		= reply_container.children().length;
-				$(el).find('.chat_reply_count').text(reply_count);
-			});
-
-			const newMsgPlur = this.newMessages == 1? '': 's';
-			$('#new_msg_indicator').empty().append(this.newMessages > 0? `&nbsp;|&nbsp;${this.newMessages} New Message${newMsgPlur}`: '');
-			this.updateReactions(data?.reactions);
-
-			// scroll to btm of thread_container
-			if(startMode){
-				if(this.forwardedChatID && $(`.chat[data-id="${this.forwardedChatID}"]`).length > 0){
-					this.skipAutoScroll = true;
-					// scroll to the forwarded chat
-					$(`.chat[data-id="${this.forwardedChatID}"]`).get(0).scrollIntoView({behavior: "smooth", block: "center"});
-				}else{
-					this.skipAutoScroll = false;
-					$('#scroll_to_bottom_container').css({display:'block'});
+				if (!this.skipAutoScroll) this.scrollDown();
+				this.cleanUpTimeInfo();
+	
+				$('#thread_id_indicator').empty().append(this.getCurrentThreadID());
+				$('#exit_thread_container').css({ display: 'block' });
+			})
+			.catch(error => {
+				this.feed('There has been a problem with your fetch operation. See console.', true);
+				console.error(error);
+			})
+			.finally(() => {
+				$('.hidden_chat').removeClass('hidden_chat').slideDown(300);
+				// show user the change in balance
+				if (this.transactionCaptcha) {
+					this.skipFeed = true;
+					this.redeemInvoice(this.transactionCaptcha);
 				}
-			}
-			if(!this.skipAutoScroll) this.scrollDown();
-			this.cleanUpTimeInfo();
-
-			$('#thread_id_indicator').empty().append(this.getCurrentThreadID());
-			$('#exit_thread_container').css({display:'block'});
-		})
-		.catch(error => {
-			this.feed('There has been a problem with your fetch operation. See console.', true);
-			console.error(error);
-		})
-		.finally(() => {
-			$('.hidden_chat').removeClass('hidden_chat').slideDown(300);
-			// show user the change in balance
-			if(this.transactionCaptcha){
-				this.skipFeed = true;
-				this.redeemInvoice(this.transactionCaptcha);
-			}
-			this.midRequest = false;
-			const chatCount = $('.chat').length;
-			$('#ext_search').attr('placeholder',`Search ${chatCount} Chat${( chatCount == 1? '': 's')}...`);
-		});
+				this.midRequest = false;
+				const chatCount = $('.chat').length;
+				$('#ext_search').attr('placeholder', `Search ${chatCount} Chat${(chatCount == 1 ? '' : 's')}...`);
+			});
 	}
-
+	
 	getThreads(url_arg = null){
 		if(this.paused) return;
+		$('#main_thread_chat').empty();
+		$('#chat_input').val('').trigger('input');
 		if(url_arg){
 			this.updateCurrentUserURL(url_arg);
 		}
@@ -1314,7 +1536,7 @@ class AppState {
 				this.feed(data.msg);
 				const threads = data.threads;
 				if(!threads || !Array.isArray(threads) || threads.length < 1){
-					$('#gui').append('<h2 style="opacity:0.7;"><br><br>Be the first to create a thread on this page!</h2>');
+					$('#gui').append('<h1 style="opacity:0.7;padding:10px;font-weight:300;font-style:italic;"><br><br><img style="display:inline-block;height:1em;" src="images/icon-128.png">&nbsp;Be the first to create a thread on this page!</h1>');
 					return;
 				}
 				const server_url = this.getSetting('server_url');
@@ -1323,10 +1545,10 @@ class AppState {
 					const isMe = thread?.is_me || false;
 					const isFree = thread?.is_free || false;
 					if(hide_free_threads && isFree) return; // Do not add free threads if setting is enabled
-					const threadDiv = $(`<div class="thread${(isFree? ' free_thread': '')}${(isMe? ' my_thread': '')}"><strong class="chat_info">${thread.thread_id}</strong>&nbsp;&nbsp;</div>`);
+					const threadDiv = $(`<div class="thread${(isFree? ' free_thread': '')}${(isMe? ' my_thread': '')}" data-chat-id="${thread.chat_id}"><strong class="chat_info">${thread.thread_id}</strong>&nbsp;&nbsp;</div>`);
 					threadDiv.append(this.createFollowLink(thread.alias, isMe, isFree),'&nbsp;&nbsp;',this.createUserPageLink(thread.alias));
 					if(server_url && thread.alias && thread.alias.startsWith('$')){
-						const channelURL  = (thread.channel && typeof thread.channel == 'string')? `${server_url}/u/${thread.alias}?channel=${thread.channel}`: '';
+						const channelURL  = (thread.channel && typeof thread.channel == 'string')? `${server_url}/u/${thread.alias}/${thread.channel}`: '';
 						const channelLink = thread.channel? `<span class="chat_info pull-right">in&nbsp;<a href="${channelURL}" target="_blank">${thread.channel}</a></span>`: '';
 						threadDiv.append(channelLink);
 					}
@@ -1341,51 +1563,10 @@ class AppState {
 					// 		<span>${thread.chat_content}</span>
 					// 	</a>`
 					// );
-					const loadThreadLink = $(
-						`<a class="thread_opener" data-thread-id="${thread.thread_id}" data-chat-id="${thread.chat_id}">
-							${password_xml}${thread.chat_content}
-						</a>`
-					);
-					if(thread.password_required) loadThreadLink.addClass('password_required');
-					loadThreadLink.on('click', (e) => {
-						e.preventDefault();
-						if(this.paused) return;
-						// Get thread ID from the clicked element
-						const ctarg 	= $(e.currentTarget);
-						const threadId 	= ctarg.attr('data-thread-id');
-						if(ctarg.hasClass('password_required')){
-							const existingPassForm = $(`.thread_pass_form[data-thread-id="${threadId}"]`);
-							if(existingPassForm.length > 0){ // user decides not to join thread by clicking again
-								// remove all existing pass forms
-								$('.thread_pass_form').remove();
-								return;
-							}
-							const cachedPass = this.getCachedPass(threadId);
-							const cachedPassStr = cachedPass? ` value="${cachedPass}"`: '';
-							const passForm = $(
-								`<form class="thread_pass_form" data-thread-id="${threadId}" style="display:none;">
-									<input type="hidden" name="thread_id" value="${threadId}">
-									<input type="password" name="password" placeholder="Thread Password"${cachedPassStr}>
-									<input type="submit" value="Login to Thread ${threadId}">
-								</form>`
-							);
-							passForm.on('submit', (e) => {
-								e.preventDefault();
-								const formData 	= new FormData(e.target);
-								const tid_val 	= formData.get('thread_id');
-								const pass_val	= this.cachePass(tid_val, formData.get('password'));
-								this.loadThread(tid_val, pass_val);
-							});
-							ctarg.after(passForm);
-							passForm.slideDown(200, ()=>{
-								passForm.find('input[type="password"]').focus();
-							});
-						}else{
-							this.loadThread(threadId);
-						}
-					});
-					threadDiv.append(loadThreadLink);
-					threadDiv.append(this.reactDiv(thread.chat_id, thread.chat_date_submitted, thread?.sender_crypto_wallets));
+					const contentDiv = this.contentPreview(thread.chat_content,thread.chat_id,thread.thread_id);
+					if(thread.password_required) contentDiv.find('.thread_opener').addClass('password_required');
+					threadDiv.append(contentDiv);
+					threadDiv.append(this.reactDiv(thread.chat_id, thread.chat_date_submitted, thread?.sender_crypto_wallets, true));
 					const reply_count = threadDiv.find('.chat_reply_count');
 					if(reply_count && thread?.comment_count){
 						reply_count.empty().append(`${thread.comment_count}`);
@@ -1619,7 +1800,7 @@ class AppState {
 			this.saveState();
 		})
 		.catch(error => {
-			this.feed('There has been a problem with your fetch operation. See console.', true);
+			this.feed('Failed to fetch notifications.', true);
 			console.error(error);
 		});
 	}
@@ -1646,15 +1827,11 @@ class AppState {
 	}
 
 	updateConversionRates(){ // TODO: Update this so it uses BTC -OR- the crypto code of the current wallet.
+		this.loadWalletSelector(); // Load on startup just in case the server doesn't respond. If the wallets aren't loaded into the selector, users cannot post.
 		if(this.paused) return;
 		const server_url = this.getSetting('server_url');
 		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')) return;
 		const conversionRateURL = `${server_url}/static/btc_rate_current.json`;
-		// Get the refresh rate
-		if(!conversionRateURL){
-			this.feed('No conversion rate URL set.', true);
-			return;
-		}
 		this.convUpdatedAt = Math.floor(Date.now() / 1000); // time since epoch in seconds
 		$.get(conversionRateURL, (data) => {
 			if(!data || !Array.isArray(data) || data.length < 1){
@@ -1870,14 +2047,25 @@ class AppState {
         for (var i=0; i<sortedKeys.length; i++) {
 			const key  	= sortedKeys[i];
 
-            let input;
-            if (typeof this.settingsDefault[key] === 'boolean') { // checkbox
-				const is_true = key in this.state.settings? this.state.settings[key]: this.settingsDefault[key];
-				const checked = is_true? ' checked': '';
-				input = $(`<input type="checkbox" name="${key}"${checked}>&nbsp;<label for="${key}">${key.replace(/_/g, ' ').toUpperCase()}</label><br><br>`);
+            var input 		= null;
+			const desc 		= this.settingsDescriptions?.[key] || null;
+			var label 		= `<label for="${key}" title="${(desc? desc: '')}">${key.replace(/_/g, ' ').toUpperCase()}</label>`;
+            if(key == 'blur_setting') {
+				input 			= $(`<select name="blur_setting" title="${(desc? desc: '')}"></select>`);
+				const options 	= ['show','blur','hide'];
+				const dflt		= this.state.settings?.[key] || this.settingsDefault?.[key] || null;
+				for(var j=0; j<options.length; j++){
+					const opt 		= options[j];
+					const selected 	= dflt == opt? ' selected': '';
+					input.append(`<option value="${opt}"${selected}>${opt}</option>`);
+				}
+			} else if (typeof this.settingsDefault[key] === 'boolean') { // checkbox
+				label			= null;
+				const is_true 	= key in this.state.settings? this.state.settings[key]: this.settingsDefault[key];
+				const checked 	= is_true? ' checked': '';
+				input 			= `<input type="checkbox" title="${(desc? desc: '')}" name="${key}"${checked}>&nbsp;<label for="${key}" title="${(desc? desc: '')}">${key.replace(/_/g, ' ').toUpperCase()}</label><br>`;
             } else if(Array.isArray(this.settingsDefault[key])){ // checkboxes
-				settingsForm.append(`<br><label for="${key}">${key.replace(/_/g, ' ').toUpperCase()}</label><br>`);
-				input = $(`<div style="font-size:0.8em;" class="checkbox_group" name="${key}"></div>`);
+				input 			= $(`<div style="font-size:0.8em;" class="checkbox_group" name="${key}"></div>`);
 				var checkbox_options = [];
 				switch(key){
 					case 'show_conversions':
@@ -1886,20 +2074,21 @@ class AppState {
 					default:;
 				}
 				for(var j=0; j<checkbox_options.length; j++){
-					const opt = checkbox_options[j];
-					const checked = this.state.settings?.[key]?.includes(opt)? ' checked': '';
-					const checkbox = $(`<input type="checkbox" name="${key}" value="${opt}"${checked}>`);
+					const opt 		= checkbox_options[j];
+					const checked 	= this.state.settings?.[key]?.includes(opt)? ' checked': '';
+					const checkbox 	= $(`<input type="checkbox" title="${(desc? desc: '')}" name="${key}" value="${opt}"${checked}>`);
 					checkbox.prop('checked',this.state.settings?.[key]?.includes(opt) || false);
 					input.append(checkbox,opt,'<br>');
 				}
-				input.append('<br><br>');
+				input.append('<br>');
 			} else {
-				settingsForm.append(`<br><label for="${key}">${key.replace(/_/g, ' ').toUpperCase()}</label><br>`);
-                const typ = typeof this.settingsDefault[key] === 'number' ? 'number' : 'text';
-				const val = this.state.settings?.[key] || this.settingsDefault[key];
-				input = $(`<input type="${typ}" name="${key}" value="${val}"><br><br>`);
+                const typ 	= typeof this.settingsDefault[key] === 'number' ? 'number' : 'text';
+				const val 	= this.state.settings?.[key] || this.settingsDefault[key];
+				input 		= $(`<input type="${typ}" title="${(desc? desc: '')}" name="${key}" value="${val}"><br><br>`);
             }
-            settingsForm.append(input);
+			if(!input) continue; // skip if no input
+			if(label) settingsForm.append(label,'<br>');
+            settingsForm.append(input,'<br><br>');
 			
 			if(key == 'server_url'){
 				// Get all server_urls from invoices in this.state.invoices
@@ -2080,7 +2269,6 @@ class AppState {
 				$(`.notification-${typ}`).each(function(){
 					const nid = $(this).attr('data-chat-id');
 					if(nid && !isNaN(nid*1)) invoice.notifsIgnoreIDs.push(nid*1);
-					console.log(nid,invoice.notifsIgnoreIDs);
 				});
 			}else if(!isNaN(id*1)){
 				invoice.notifsIgnoreIDs.push(id*1);
@@ -2337,7 +2525,7 @@ class AppState {
 							`<form class="channel_settings_from" data-channel="${channel.channel}" data-alias="${this.channelAliasCache}" style="display:none;">
 								<h4>Channel Settings <span style="color:rgb(255,100,100);font-style:italic;"><br>PREMIUM FEATURES COMING SOON!</span></h4>
 								<input type="hidden" name="channel" value="${channel.channel}">
-								<input type="hidden" name="captcha_id" value="${this.channelCaptchaCache}">
+								<input type="hidden" name="captcha_id" value="${this.channelAliasCache}">
 								<input type="hidden" name="date_end" value="0">
 								<input type="checkbox" name="premium_flag" class="channel_premium_flag" value="1" ${channel.premium_flag? 'checked': ''}> Premium Channel
 								<br>
@@ -2518,11 +2706,8 @@ class AppState {
 
 		try{
 			// Make sure the user is verified
-			console.log(1);
 			const alias = this.state.invoices[selectedCaptcha]?.alias || null;
-			console.log(2);
 			if(!alias || typeof alias != 'string' || !alias.startsWith('$')) return;
-			console.log(3);
 	
 			const formData = new FormData();
 			formData.append('captcha_id', selectedCaptcha);
@@ -2584,7 +2769,6 @@ class AppState {
 		const selectedWalletID = this.getSelectedWalletID();
 		if(selectedWalletID === 'free'){
 			this.currentCaptcha = 'free';
-			this.feed('Free Chat Mode Enabled');
 		}else{
 			this.currentCaptcha = selectedWalletID;
 		}
@@ -2865,14 +3049,15 @@ class AppState {
 							.then(json => {
 								const data = typeof json == 'string'? JSON.parse(json): json;
 								if(!data || typeof data != 'object'){
-									app.feed('Server response parse failed.', true);
+									app.feed('Server response parse failed.', true, $(`.invoice_payout_form[data-captcha-id="${captchaId}"]`));
 									return;
 								}
 								if(data.error){
-									console.log(data);
-									app.feed(data.error, true);
+									console.error(data);
+									app.feed(data.error, true, $(`.invoice_payout_form[data-captcha-id="${captchaId}"]`));
 								}else if(data.msg){
 									app.feed(data.msg);
+									app.redeemInvoice(captchaId);
 									$('.invoice_payout_form').slideUp(300,function(){
 										app.buildWalletForm();
 									});
@@ -3277,7 +3462,7 @@ class AppState {
 	scrollDown() {
 		this.newMessages = 0;
 		this.skipAutoScroll = false;
-		$('#scroll_to_bottom_container').addClass('faded');
+		$('#scroll_to_bottom_container').slideUp(200);
 		setTimeout(() => {
 			$('#gui').animate({ scrollTop: $('#gui').prop('scrollHeight') }, 400);
 		}, 10);

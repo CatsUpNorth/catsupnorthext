@@ -82,7 +82,7 @@
 
 		<div id="chat_form">
 			<div id="scroll_to_bottom_container" style="display:none;width:100%;text-align:center;margin-bottom:5px;">
-				<a id="scroll_to_bottom_link" class="faded">
+				<a id="scroll_to_bottom_link">
 					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">
 						<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
 					</svg>					  
@@ -93,29 +93,40 @@
 				</a>
 			</div>
 			<span id="current_url" class="current_url" title="Current User URL" style="font-size:11px;font-style:italic;">&nbsp;</span>
-			<div id="reply_clone_container" style="display:none;"></div>
 			<div id="create_thread_options" style="display:none;">
+				<div id="metadata_form"></div>
 				<input type="password" id="password_init" placeholder="Thread password (optional)" style="width:95vw;">
-				<br>
-				<div id="my_channel_options">
+				<div id="my_channel_options" style="width:75%;">
 					<select id="create_thread_channel_selector"></select>
 				</div>
-				<div id="metadata_form"></div>
+				<a id="cancel_thread" class="pull-right">
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+					</svg>		
+					Cancel
+				</a>
 			</div>
-			<input type="text" id="chat_input" placeholder="Create a new thread on this page..." style="margin-top:5px;margin-bottom:5px;width:95vw;">
-			<select id="wallet_selector"></select>
 			<div id="spend_container" style="display:none;">
-				<input type="number" id="spend_input" placeholder="Fiat SuperChat (optional)" min="0" step="0.01" style="width:85%;">
+				<input type="number" id="spend_input" placeholder="Fiat Tip (optional)" min="0" step="0.01" style="width:85%;">
 				<br>
-				<input type="number" id="spend_sat" placeholder="Sats SuperChat" step="1" min="0" style="width:60%;">&nbsp;
+				<input type="number" id="spend_sat" placeholder="Tip Atomic Units" step="1" min="0" style="width:60%;">&nbsp;
 				<a id="spend_max">
 					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">
 						<path stroke-linecap="round" stroke-linejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" />
 					</svg>&nbsp;<span id="sats_max"></span>
-				</a>
+				</a>&nbsp;
+				<span id="spend_desc" class="superchat_ephemeral pull-right">&nbsp;</span>
 				<br>
-				&nbsp;<span id="spend_desc" class="superchat_ephemeral pull-right">&nbsp;</span>
+				<a id="cancel_chat">
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+					</svg>		
+					Cancel
+				</a>
 			</div>
+			<div id="reply_clone_container" style="display:none;"></div>
+			<input type="text" id="chat_input" placeholder="Create a new thread on this page...">
+			<select id="wallet_selector"></select>
 			<div id="captcha_form_container" style="display:none;"></div>
 			<br>
 			<span id="conversion_rate"></span>&nbsp;
@@ -158,7 +169,11 @@
 					</g>
 				</svg>
 			</div>
-
+			<div id="heroicon-information-circle">
+				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+					<path stroke-linecap="round" stroke-linejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+				</svg>						
+			</div>
 			<div id="heroicon-rectangle-group">
 				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6a1.125 1.125 0 0 1-1.125-1.125v-3.75ZM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-8.25ZM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-2.25Z" />
@@ -243,6 +258,11 @@
 				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">
 					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
 				</svg>						
+			</div>
+			<div id="heroicon-chevron-right">
+				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">
+					<path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+				</svg>				  
 			</div>
 			<div id="heroicon-chevron-double-down">
 				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="height:1em;">

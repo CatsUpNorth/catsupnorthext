@@ -328,6 +328,58 @@ function buildMetaDataForm(){
 function hideNavs(){
 	$('.internal_nav').not('#nav-close').slideUp(200);
 }
+
+function addChatInputListeners(){
+	$('#chat_input').on('keyup', function(event){
+		const v_len = $(this).val().length;
+		if(v_len > 0){
+			const threadId = app.getCurrentThreadID();
+			if(threadId){
+				$('#spend_container').slideDown(200); // Allow user to super chat
+				$('#create_thread_options').slideUp(200); // Hide the password input for creating a password-protected thread.
+			}else{
+				scrapeURL(app.getCurrentURL());
+				$('#create_thread_options').slideDown(200); // Show the password input for creating a password-protected thread.
+			}
+			$('#send_link').fadeIn(200);
+		}else{
+			$('#create_thread_options').add('#spend_container').slideUp(200,function(){
+				$('#spend_input').val('').trigger('keyup');
+				$('#metadata_form').empty();
+				urlMetaData = null;
+			});
+			$('#send_link').fadeOut(200);
+		}
+		if(event.key === 'Enter'){
+			event.preventDefault();
+			if(event.altKey){ // If the user types ALT+Enter, they want to do multiline. Convert to textarea temporarily.
+				const current_val = $(this).val();
+				const placeholder = $(this).attr('placeholder');
+				$(this).replaceWith(`<textarea id="chat_input" placeholder="${placeholder}" rows="4">${current_val}\n</textarea>`);
+				$('#chat_input').focus();
+				// move cursor to end of text
+				const el = $('#chat_input')[0];
+				const len = $('#chat_input').val().length;
+				el.selectionStart = len;
+				el.selectionEnd = len;
+			}else{
+				$('#send_link').trigger('click');
+			}
+		}
+		const bal = app.getSelectedWalletBalance();
+		$('#sats_max').empty().append(`Max:&nbsp;${bal}`);
+	});
+}
+
+function revert_chat_input(){
+	// if chat_input is a textarea, convert it back to an input.
+	if($('#chat_input').is('textarea')){
+		const placeholder = $('#chat_input').attr('placeholder');
+		$('#chat_input').replaceWith(`<input id="chat_input" placeholder="${placeholder}" type="text" value="">`);
+		$('#chat_input').focus();
+		addChatInputListeners();
+	}
+}
 	
 $('document').ready(function(){
 
@@ -357,46 +409,15 @@ $('document').ready(function(){
 		if(isScrolledToBottom){
 			app.clearNewMessages();
 			app.skipAutoScroll = false;
-			$('#scroll_to_bottom_link').addClass('faded');
+			$('#scroll_to_bottom_link').slideUp(200);
 		}else{
 			app.skipAutoScroll = true;
-			$('#scroll_to_bottom_link').removeClass('faded');
+			$('#scroll_to_bottom_link').slideDown(200);
 		}
 	});
 	$('#scroll_to_bottom_link').on('click', event => {
 		event.preventDefault();
 		app.scrollDown();
-	});
-	$('#chat_input').on('keyup', function(event){
-		const v_len = $(this).val().length;
-		if(v_len > 0){
-			const threadId = app.getCurrentThreadID();
-			if(threadId){
-				$('#spend_container').slideDown(200); // Allow user to super chat
-				$('#create_thread_options').slideUp(200); // Hide the password input for creating a password-protected thread.
-			}else{
-				scrapeURL(app.getCurrentURL());
-				$('#create_thread_options').slideDown(200); // Show the password input for creating a password-protected thread.
-			}
-			$('#send_link').fadeIn(200);
-		}else{
-			$('#create_thread_options').add('#spend_container').slideUp(200,function(){
-				$('#spend_input').val('').trigger('keyup');
-				$('#metadata_form').empty();
-				urlMetaData = null;
-			});
-			$('#send_link').fadeOut(200);
-		}
-		if(event.key === 'Enter'){
-			event.preventDefault();
-			if(event.ctrlKey && app.getCurrentThreadID()){ // Users cannot send money when creating a thread (currentThreadID will return null if not inside thread).
-				$('#send_money_btn').trigger('click');
-			}else{
-				$('#send_link').trigger('click');
-			}
-		}
-		const bal = app.getSelectedWalletBalance();
-		$('#sats_max').empty().append(`Max:&nbsp;${bal}`);
 	});
 	$('#spend_input').on('keyup', function(event){
 		event.preventDefault();
@@ -449,9 +470,16 @@ $('document').ready(function(){
 		$('#spend_sat').trigger('keyup');
 	});
 	$('#send_link').on('click',function(){
+
+		// if chat_input is empty, do nothing.
+		if($('#chat_input').val().trim().length < 1) return;
+
+
 		const wallet_id 	= app.getSelectedWalletID();
 		const content 		= app.readAndClearChatInput();
 		const thread_id		= app.getCurrentThreadID();
+
+		revert_chat_input()
 
 		// Make sure the user is not trying to cross-post when a thread is not selected.
 		const xpost_check	= app.getCrossPostID();
@@ -472,7 +500,7 @@ $('document').ready(function(){
 			return;
 		}
 		const password		= thread_id? null: $('#password_init').val().trim(); // cached passwords used for commenting in possword-protected threads.
-		const channel		= $('#thread_channel').val(); // TODO: Need to implement this
+		const channel		= $('#create_thread_channel_selector').val() || null;
 		if(thread_id){
 			app.sendChat(wallet_id, content, use_reply_to, thread_id, spend, password, channel);
 		}else{
@@ -511,6 +539,23 @@ $('document').ready(function(){
 			}
 		});
 	});
+	$('#cancel_thread').on('click', function(event){
+		event.preventDefault();
+		$('#chat_input').val('').trigger('keyup');
+		$('#create_thread_options').slideUp(200);
+
+		revert_chat_input();
+	});
+	$('#cancel_chat').on('click', function(event){
+		event.preventDefault();
+		$('#chat_input').val('').trigger('keyup');
+		$('#spend_container').slideUp(200,function(){
+			$('#spend_input').val('').trigger('keyup');
+		});
+		revert_chat_input();
+	});
+
+	addChatInputListeners();
 
 	// polling
 	try{
@@ -551,17 +596,35 @@ $('document').ready(function(){
 
 	
 	// Track when the user's current url changes and load threads for the new page (new tab, new page, etc.)
-	chrome.webNavigation.onCompleted.addListener((details) => { // Monitor when a user navigates to a new page in the current tab
+	var setWebNavListeners = setInterval(() => {
 		if(!app) return; // app is loaded when page ready.
-		chrome.tabs.get(details.tabId, (tab) => {
-			if (tab && tab.url && tab.url != lastUrlLoaded){
-				app.getThreads(tab.url);
-				lastUrlLoaded = tab.url;
-				urlMetaData = null;
-				$('#chat_input').val('').trigger('keyup');
-			}
+		if(!chrome || !chrome.webNavigation) return;
+		chrome.webNavigation.onCompleted.addListener((details) => { // Monitor when a user navigates to a new page in the current tab
+			if(!app) return; // app is loaded when page ready.
+			chrome.tabs.get(details.tabId, (tab) => {
+				if (tab && tab.url && tab.url != lastUrlLoaded){
+					app.getThreads(tab.url);
+					lastUrlLoaded = tab.url;
+					urlMetaData = null;
+					$('#chat_input').val('').trigger('keyup');
+				}
+			});
 		});
-	});
+		// Add a listener for sites that use pushState to change the URL without reloading the page.
+		chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+			if(!app) return; // app is loaded when page ready.
+			chrome.tabs.get(details.tabId, (tab) => {
+				if (tab && tab.url && tab.url != lastUrlLoaded){
+					app.getThreads(tab.url);
+					lastUrlLoaded = tab.url;
+					urlMetaData = null;
+					$('#chat_input').val('').trigger('keyup');
+				}
+			});
+		});
+		clearInterval(setWebNavListeners);
+		setWebNavListeners = null;
+	},100);
 	chrome.tabs.onActivated.addListener((activeInfo) => { // Listen for navigation on current tab
 		if(!app) return; // app is loaded when page ready.
 		chrome.tabs.get(activeInfo.tabId, (tab) => {
@@ -581,17 +644,5 @@ $('document').ready(function(){
 			urlMetaData = null;
 			$('#chat_input').val('').trigger('keyup');
 		}
-	});
-	// Add a listener for sites that use pushState to change the URL without reloading the page.
-	chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
-		if(!app) return; // app is loaded when page ready.
-		chrome.tabs.get(details.tabId, (tab) => {
-			if (tab && tab.url && tab.url != lastUrlLoaded){
-				app.getThreads(tab.url);
-				lastUrlLoaded = tab.url;
-				urlMetaData = null;
-				$('#chat_input').val('').trigger('keyup');
-			}
-		});
 	});
 });
