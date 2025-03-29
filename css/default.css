@@ -242,10 +242,6 @@ input[type="submit"] {
   color: light-dark(var(--lm-faded-txt), var(--dm-faded-txt));
   background-color:rgba(0,0,0,0);
 }
-.cross_post_link, .reply_link{
-  padding-left:5px;
-  padding-right:5px;
-}
 .chat{
   position: relative;
   margin-left:none;
@@ -316,12 +312,6 @@ hr{
 .reaction_link_span, .follow_link{
   font-size: 0.8em; /* Needs to be same size as .chat_info and .time_info for alignment */
 }
-.reply_link, .cross_post_link{
-  color: light-dark(var(--lm-faded-txt), var(--dm-faded-txt));
-}
-.reply_link.active, .cross_post_link.active{
-  color: light-dark(var(--lm-link), var(--dm-link));
-}
 .like_button:not(.my_reaction), .dislike_button:not(.my_reaction){
   color: light-dark(var(--lm-faded-txt), var(--dm-faded-txt));
   font-weight: 400;
@@ -383,9 +373,13 @@ svg {
   fill: currentColor;
 }
 
-.blurred{
+.blur_hide {
+  display:none;
+}
+.blur_blur {
   filter: blur(5px);
 }
-.blurred .reply_container{
-  display:none !important;
+.blur_show {
+  background-color: rgb(80,0,0);
+  display: block;
 }

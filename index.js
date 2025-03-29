@@ -1,11 +1,6 @@
 /* Business logic should live in app.js. Use this script to add listeners and handle messages and then call app methods. */
 
-// TODO:
-
-// Bugs
-// [ ] Timezone issue with the chat timestamps.
-// [ ] Top chats have doubled-up reactions.
-// [ ] Requesting payout removes the name?
+// TODO and bugs moved to notion
 
 /* Listeners (add after doc ready) */
 let app = null,
@@ -553,6 +548,19 @@ $('document').ready(function(){
 			$('#spend_input').val('').trigger('keyup');
 		});
 		revert_chat_input();
+	});
+	
+	// thread lock functionality
+	$('#thread_locker').on('click', function(){
+		$('#thread_locker').css({display:'none'});
+		$('#thread_unlocker').css({display:'inline-block'});
+		app.lockThread();
+	});
+
+	$('#thread_unlocker').on('click', function(){
+		$('#thread_locker').css({display:'inline-block'});
+		$('#thread_unlocker').css({display:'none'});
+		app.unlockThread();
 	});
 
 	addChatInputListeners();

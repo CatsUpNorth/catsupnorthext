@@ -75,7 +75,21 @@
 		</div>
 		
 		<div id="exit_thread_container" style="display:none;padding:6px;">
-			<a id="exit_thread">‹&nbsp;Exit&nbsp;Thread&nbsp;<span id="thread_id_indicator"></span></a><br><div id="main_thread_chat"></div>
+			<a id="exit_thread">‹&nbsp;Exit&nbsp;Thread&nbsp;<span id="thread_id_indicator"></span></a>
+			<span class="pull-right">
+				<a class="pull-right" id="thread_locker">
+					lock&nbsp;<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="height:1em;">
+						<path d="M18 1.5c2.9 0 5.25 2.35 5.25 5.25v3.75a.75.75 0 0 1-1.5 0V6.75a3.75 3.75 0 1 0-7.5 0v3a3 3 0 0 1 3 3v6.75a3 3 0 0 1-3 3H3.75a3 3 0 0 1-3-3v-6.75a3 3 0 0 1 3-3h9v-3c0-2.9 2.35-5.25 5.25-5.25Z" />
+					</svg>
+				</a>
+				<a class="pull-right error" id="thread_unlocker" style="display:none;">
+					unlock&nbsp;<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="height:1em;">
+						<path fill-rule="evenodd" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V7A1.5 1.5 0 0 0 3 8.5v5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 11.5 7V4.5A3.5 3.5 0 0 0 8 1Zm2 6V4.5a2 2 0 1 0-4 0V7h4Z" clip-rule="evenodd"/>
+					</svg>
+				</a>
+			</span>
+			<br>
+			<div id="main_thread_chat"></div>
 		</div>
 		<div id="gui">
 		</div>
@@ -170,9 +184,14 @@
 				</svg>
 			</div>
 			<div id="heroicon-information-circle">
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">
 					<path stroke-linecap="round" stroke-linejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
 				</svg>						
+			</div>
+			<div id="heroicon-ellipsis-vertical">
+				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">
+					<path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z" />
+				</svg>									  
 			</div>
 			<div id="heroicon-rectangle-group">
 				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:1em;">

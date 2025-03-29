@@ -74,6 +74,8 @@ class AppState {
 		this.lastThreadLoaded 	= null;
 		this.allThreadChatIds 	= [];
 		this.currentMetadata 	= {};
+		this.threadLocked		= null; // set to id if locked
+		this.waitingURL			= null; // used to track real url if thread is locked
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
 		this.settingsSchema.server_url = 'string';
 		this.loadState();
@@ -85,6 +87,16 @@ class AppState {
 
 	stopModMode(){ // manually called in the console to disable mod features
 		this.modMode = false;
+	}
+
+	lockThread(){
+		this.threadLocked = this.getCurrentThreadID();
+	}
+
+	unlockThread(){
+		this.threadLocked = null;
+		this.getThreads(this.waitingURL); // refresh threads on current page
+		this.waitingURL = null;
 	}
 	
 	feed(arg, err = false, cloneBefore = null){
@@ -861,7 +873,7 @@ class AppState {
 	}
 	
 	reactDiv(chat_id, timestamp = null, sender_crypto_wallets = null, is_thread = false){ // reply_count is only used by threads.
-		const container = $('<span class="reaction_container"></span>');
+		const container = $('<div class="reaction_container"></div>');
 		var date_str = '';
 		if(timestamp && typeof timestamp == 'string' && timestamp.length > 0){
 			// Attempt to parse the timestamp and reformat as date + timezone
@@ -895,7 +907,7 @@ class AppState {
 			}
 		}
 		if(sender_crypto_wallets && typeof sender_crypto_wallets == 'string' && sender_crypto_wallets.length > 0){
-			container.append(`&nbsp;<span style="opacity:0.4;font-weight:600;font-size:0.7em;">${sender_crypto_wallets}</span>`);
+			container.append(`&nbsp;<div style="display:inline-block;opacity:0.4;font-weight:600;font-size:0.7em;padding-top:8px;">${sender_crypto_wallets}</div>`);
 		}
 		container.append(`<span class="time_info">&nbsp;${date_str}</span>&nbsp;`);
 		container.append(
@@ -908,13 +920,17 @@ class AppState {
 					${this.heroicon('chevron-down')}
 					<span class="reaction_count dislike_count" data-chat-id="${chat_id}">0</span>
 				</a>
-			</span>`
+				<a href="#" class="chat_opts_opener" data-chat-id="${chat_id}" style="padding-left:3px;padding-right:3px;">
+					${this.heroicon('ellipsis-vertical')}
+				</a>
+			</span>`,
+			`<div class="chat_opts_container" data-chat-id="${chat_id}" style="display:none;padding:6px;line-height:1.2em;text-align:right;width:100%;"></div>`
 		);
 		if(is_thread) container.prepend('<br>');
 
 		// Cross-posting and replies
-		var crossPostLink = $(`<a href="#" class="cross_post_link" data-chat-id="${chat_id}" title="Cross-Post chat to another thread."></a>`);
-		crossPostLink.append(this.heroicon('arrows-right-left') || '⇄');
+		var crossPostLink = $(`<a href="#" class="cross_post_link" data-chat-id="${chat_id}" title="Cross-Post chat to another thread." style="padding-left:15px;"></a>`);
+		crossPostLink.append(this.heroicon('arrows-right-left') || '⇄', '&nbsp;Cross-Post');
 		crossPostLink.off('click').on('click', (event) => {
 			event.preventDefault();
 			$('.reply_link').add('.cross_post_link').removeClass('active');
@@ -938,10 +954,10 @@ class AppState {
 			});
 			$('#reply_clone_container').css({display:'none'}).empty().append(`<hr><span class="xpost_info">${title}`,crossPostClone,'</span><br>&nbsp;',cancelLink).slideDown(300);
 		});
-		var replyLink = $(`<a href="#" class="reply_link chat_reply_link" data-chat-id="${chat_id}" title="Reply to chat."></a>`);
+		var replyLink = $(`<a href="#" class="reply_link chat_reply_link" data-chat-id="${chat_id}" title="Reply to chat." style="padding-left:15px;"></a>`);
 		replyLink.append(
 			(this.heroicon('chat-bubble-bottom-center') || '💬'),
-			`<span class="chat_reply_count" data-chat-id="${chat_id}" style="padding-left:4px;"></span>`
+			(is_thread? `<span class="chat_reply_count" data-chat-id="${chat_id}" style="padding-left:4px;"></span>`: '&nbsp;Reply')
 		);
 		replyLink.off('click').on('click', (event) => {
 			event.preventDefault();
@@ -972,7 +988,24 @@ class AppState {
 				$('#chat_input').focus();
 			});
 		});
-		container.find('.reaction_link_span').prepend(crossPostLink).prepend(replyLink);
+		container.find('.chat_opts_opener').off().on('click', (event) => {
+			const chat_id = $(event.currentTarget).attr('data-chat-id') || null;
+			if(!chat_id) return;
+			const chat_opts = $(`.chat_opts_container[data-chat-id="${chat_id}"]`).first(); // children can contain multiple chat_opts_container
+			if(chat_opts.length < 1) return;
+			$('.chat_opts_container').not(chat_opts).slideUp(200);
+			chat_opts.slideToggle(200);
+		});
+		if(is_thread){ // threads don't use .chat_opts_container
+			container.find('.reaction_link_span').prepend(replyLink);
+			if(!this.modMode) container.find('.chat_opts_container').add('.chat_opts_opener').remove();
+		}else{
+			const optsContainer = container.find('.chat_opts_container');
+			optsContainer.append(
+				crossPostLink,
+				replyLink,
+			);
+		}
 		return container;
 	}
 
@@ -1239,9 +1272,72 @@ class AppState {
 		const chat_id 	= $(container).attr('data-id');
 		if(!chat_id || isNaN(chat_id*1)) return;
 		$(container).find('.blur_link').remove();
-		const blur_link = $(`<a href="#" class="blur_link" data-chat-id="${chat_id}" title="Blur this item." style="padding-right:3px;"></a>`);
-		blur_link.append(this.heroicon('eye-slash') || 'X');
-		$(container).prepend(blur_link);
+		const blur_link = $(`<a href="#" class="blur_link" data-chat-id="${chat_id}" title="Blur this item." style="padding-left:15px;"></a>`);
+		blur_link.append(this.heroicon('eye-slash') || 'X', 'Blur');
+		blur_link.on('click', (event) => {
+			event.preventDefault();
+			const chat_id = $(event.currentTarget).attr('data-chat-id');
+			if(isNaN(chat_id*1)) return;
+			const chat_div = $(`.chat[data-id="${chat_id}"]`);
+			if(chat_div.length < 1) return;
+			chat_div.addClass('blurred');
+			const server_url = this.getSetting('server_url');
+			if(!server_url){
+				this.feed("No server URL set.", true);
+				return;
+			}
+			const blurEndpoint = `${server_url}/blur_chat`;
+			const formData = new FormData();
+			formData.append('chat_id', chat_id*1);
+			formData.append('captcha_id', this.getSelectedWalletID());
+			formData.append('secret', this.getInvoiceSecret(this.getSelectedWalletID()));
+			fetch(blurEndpoint, {
+				method: 'POST',
+				body: formData
+			})
+			.then(response => {
+				if (response.ok) {
+					return response.text();
+				} else {
+					throw new Error('Network response was not ok');
+				}
+			})
+			.then(json => {
+				const data = typeof json == 'string'? JSON.parse(json): json;
+				if(!data || typeof data != 'object'){
+					this.feed('Server response parse failed.', true);
+					return;
+				}
+				if(data.error){
+					this.feed(data.error, true);
+				}else{
+					this.feed(data.msg);
+				}
+			})
+			.catch(error => {
+				this.feed('Failed to blur chat.', true);
+				console.error(error);
+			});
+		});
+		$(container).find('.chat_opts_container').prepend(blur_link);
+	}
+
+	applyBlurSetting(){
+		const blur_setting 	= this.getSetting('blur_setting');
+		const blurred_els	= $('.blurred');
+		switch(blur_setting){ // show, blur, or hide
+			case 'show':
+				blurred_els.removeClass('blur_hide').removeClass('blur_blur').addClass('blur_show');
+				break;
+			case 'hide':
+				blurred_els.removeClass('blur_show').removeClass('blur_blur').addClass('blur_hide');
+				break;
+			case 'blur':
+				blurred_els.removeClass('blur_show').removeClass('blur_hide').addClass('blur_blur');
+				break;
+			default: 
+				this.feed(`Blur setting "${blur_setting}" is not valid.`,true);
+		}
 	}
 
 	addBlurFunctionality(){
@@ -1474,6 +1570,10 @@ class AppState {
 	
 	getThreads(url_arg = null){
 		if(this.paused) return;
+		if(this.threadLocked){
+			this.waitingURL = url_arg;
+			return;
+		}
 		$('#main_thread_chat').empty();
 		$('#chat_input').val('').trigger('input');
 		if(url_arg){
@@ -1524,6 +1624,10 @@ class AppState {
 			})
 			.then(json => {
 				$('#gui').empty();
+				// remove chats that might render late due to slow server response.
+				setTimeout(function(){
+					$('#gui').find('.chat').remove();
+				},2000);
 				const data = typeof json == 'string'? JSON.parse(json): json;
 				if(!data || typeof data != 'object'){
 					this.feed('Server response parse failed.', true);
