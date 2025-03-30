@@ -29,7 +29,7 @@ class AppState {
 			show_fiat_balance:		true,
 			show_conversions:		[ "BTC_USD", "XMR_USD" ],
 			blur_setting:			'blur', // show, blur, or hide
-			dwell_time_per_dollar:	0, // how long a superchat stays visible per dollar spent
+			dwell_time_per_dollar:	0, // how long a tip chat stays visible per dollar spent
 		};
         this.settingsSchema 	= {
             server_url:				'string',
@@ -274,7 +274,7 @@ class AppState {
 					this.loadThread(threadId);
 				}
 			});
-			content_div.append(loadThreadLink);
+			content_div.append('<br>&nbsp;',loadThreadLink);
 		}
 
 		return content_div;
@@ -998,10 +998,34 @@ class AppState {
 		});
 		if(is_thread){ // threads don't use .chat_opts_container
 			container.find('.reaction_link_span').prepend(replyLink);
-			if(!this.modMode) container.find('.chat_opts_container').add('.chat_opts_opener').remove();
+			const embedIcon = '&lt;/&gt;';
+			const embedLink = $(`<a href="#" class="embed_link" data-chat-id="${chat_id}" title="Embed this chat." style="padding-left:15px;">${embedIcon} Embed</a>`);
+			embedLink.on('click', (event) => {
+				const parentThreadDiv = $(event.currentTarget).closest('.thread').first();
+				const threadId = parentThreadDiv.attr('data-thread-id') || null;
+				if(!threadId){
+					this.feed('Thread ID not found.', true);
+					return;
+				}
+				const serverURL = this.getSetting('server_url');
+				if(!serverURL){
+					this.feed('Server URL not set.', true);
+					return;
+				}
+				const threadLink = `${serverURL}/thread/${threadId}`;
+				// copy to clipboard
+				navigator.clipboard.writeText(threadLink).then(() => {
+					this.feed('Thread link copied to clipboard.');
+				}).catch(err => {
+					this.feed('Failed to copy thread link to clipboard.', true);
+					console.error('Could not copy text: ', err);
+				});
+			});
+			container.find('.chat_opts_container').append(
+				embedLink
+			);
 		}else{
-			const optsContainer = container.find('.chat_opts_container');
-			optsContainer.append(
+			container.find('.chat_opts_container').append(
 				crossPostLink,
 				replyLink,
 			);
@@ -1627,7 +1651,7 @@ class AppState {
 				// remove chats that might render late due to slow server response.
 				setTimeout(function(){
 					$('#gui').find('.chat').remove();
-				},2000);
+				},100);
 				const data = typeof json == 'string'? JSON.parse(json): json;
 				if(!data || typeof data != 'object'){
 					this.feed('Server response parse failed.', true);
@@ -1649,7 +1673,7 @@ class AppState {
 					const isMe = thread?.is_me || false;
 					const isFree = thread?.is_free || false;
 					if(hide_free_threads && isFree) return; // Do not add free threads if setting is enabled
-					const threadDiv = $(`<div class="thread${(isFree? ' free_thread': '')}${(isMe? ' my_thread': '')}" data-chat-id="${thread.chat_id}"><strong class="chat_info">${thread.thread_id}</strong>&nbsp;&nbsp;</div>`);
+					const threadDiv = $(`<div class="thread${(isFree? ' free_thread': '')}${(isMe? ' my_thread': '')}" data-chat-id="${thread.chat_id}" data-thread-id="${thread.thread_id}"><strong class="chat_info">${thread.thread_id}</strong>&nbsp;&nbsp;</div>`);
 					threadDiv.append(this.createFollowLink(thread.alias, isMe, isFree),'&nbsp;&nbsp;',this.createUserPageLink(thread.alias));
 					if(server_url && thread.alias && thread.alias.startsWith('$')){
 						const channelURL  = (thread.channel && typeof thread.channel == 'string')? `${server_url}/u/${thread.alias}/${thread.channel}`: '';
@@ -2925,7 +2949,12 @@ class AppState {
 				$('#nav-close').trigger('click');
 				this.saveState();
 
-				// Reload the thread or get threads again when user changes wallet.
+				// Reload the thread or get threads again when user changes wallet
+				// if(this.currentThreadID){
+				// 	this.loadThread(this.currentThreadID, this.passCache, true); 
+				// }else{
+				// 	this.getThreads();
+				// }
 				// This allows the follow links to update.
 				this.updateFollowList(this.currentCaptcha);
 				this.updateConversionRates(); // Also fetches user's notifications
@@ -2982,7 +3011,7 @@ class AppState {
 
         // wallet list
 		const h2 = $('<h2>My&nbsp;Wallets&nbsp;</h2>');
-		const plus = $(`<a href="#" id="add_wallet" title="Add a new wallet">${this.heroicon('plus')}</a>`);
+		const plus = $(`<a href="#" id="add_wallet" class="pull-right" title="Add a new wallet">${this.heroicon('plus')} New</a>`);
 		plus.on('click', (e) => {
 			e.preventDefault();
 			$('.buy_form_container').toggle(200);
@@ -3018,7 +3047,7 @@ class AppState {
 			const crypto_code 	= invoice?.crypto_currency || null;
 			const crypto_symbol = this.cryptoSymbol(crypto_code);
 			const inv_group 	= invoice?.invoice_group || null;
-			const group_str 	= inv_group? `<span class="pull-right" style="font-weight:900;font-size:2em;opacity:0.4;" title="Invoice Group ID (Invoice groups allow you to accept multiple crypto currencies as super chats).">G.${inv_group}</span>`: '';
+			const group_str 	= inv_group? `<span class="pull-right" style="font-weight:600;font-size:1.7em;opacity:0.4;" title="Invoice Group ID (Invoice groups allow you to accept multiple crypto currencies as tip chats).">g${inv_group}</span>`: '';
 			const alias 		= invoice?.alias || null;
 			const use_name      = alias? alias: name.substring(0, 8);
             const inv_link      = invoice.link? `<a href="${invoice.link}" target="_blank">${this.heroicon('clipboard-document')}&nbsp;Invoice Link</a>`: 'No invoice link';
