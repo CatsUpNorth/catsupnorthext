@@ -946,6 +946,8 @@ class AppState {
 			crossPostClone.find('.cross_post_link').remove();
 			crossPostClone.find('.reply_link').remove();
 			crossPostClone.find('.reply_container').remove();
+			crossPostClone.find('.blur_link').remove();
+			crossPostClone.find('.chat_opts_container').remove();
 			const cancelIcon = this.heroicon('x-mark') || '❌';
 			const cancelLink = $(`<a href="#" class="cancel_cross_post pull-right faded" title="Cancel Cross-Post">${cancelIcon}&nbsp;Cancel Cross-Post</a>`);
 			cancelLink.on('click', (event) => {
@@ -978,6 +980,8 @@ class AppState {
 			replyToClone.find('.reply_link').remove();
 			replyToClone.find('.reaction_link_span').remove();
 			replyToClone.find('.reply_container').remove();
+			replyToClone.find('.blur_link').remove();
+			replyToClone.find('.chat_opts_container').remove();
 			const cancelIcon = this.heroicon('x-mark') || '❌';
 			const cancelLink = $(`<a href="#" class="cancel_reply_to pull-right faded" title="Cancel Reply">${cancelIcon}&nbsp;Cancel Reply</a>`);
 			cancelLink.on('click', (event) => {
@@ -1468,6 +1472,7 @@ class AppState {
 					const isFree = chat?.is_free || false;
 					const isTop = (!chat.reply_to_id && chat.thread_id == threadId) ? true : false;
 					const isSuper = (chat.superchat && !isNaN(chat.superchat * 1) && chat.superchat > 0) ? true : false;
+					const isBlurred = (chat.blurred && chat.blurred == 1) ? true : false;
 	
 					if (hide_free_chats && isFree) return; // Do not add free chats if setting is enabled
 	
@@ -1488,6 +1493,9 @@ class AppState {
 					} else {
 						chatDivClasses.push('chat');
 						chatDivClasses.push('hidden_chat');
+					}
+					if (isBlurred) {
+						chatDivClasses.push('blurred');
 					}
 					if (isSuper) {
 						chatDivClasses.push('superchat');
@@ -1553,6 +1561,8 @@ class AppState {
 						if (myChatParent.length) $(el).addClass('is_reply_to_me'); // user can blur this chat even if not in modMode
 					}
 				});
+
+				this.applyBlurSetting(); // apply blur setting to all chats
 	
 				const newMsgPlur = this.newMessages == 1 ? '' : 's';
 				$('#new_msg_indicator').empty().append(this.newMessages > 0 ? `&nbsp;|&nbsp;${this.newMessages} New Message${newMsgPlur}` : '');
