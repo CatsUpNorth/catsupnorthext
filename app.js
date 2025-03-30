@@ -3255,7 +3255,7 @@ class AppState {
 						</select><br><br>
 						<div class="name_fee_desc" data-captcha-id="${name}" style="display:none;"><strong>Fee:</strong> <span class="user_verification_fee">Loading...</span><br><br></div>
 						<input type="submit" value="Get New Username"><br><br>
-						<strong class="error">WARNING:</strong> This account will no longer be anonymous after adding a nickname or a verified username. You will need to create/use a different account to post anonymously again.
+						<strong class="error">WARNING:</strong> Assigning a username will reduce your anonymity and may affect your privacy.
 					</form>`
 				);
 				verificationForm.append('<br><br>&nbsp;',cancelVerificationLink);
