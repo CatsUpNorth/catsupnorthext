@@ -1016,13 +1016,71 @@ class AppState {
 					this.feed('Server URL not set.', true);
 					return;
 				}
-				const threadLink = `${serverURL}/thread/${threadId}`;
-				// copy to clipboard
-				navigator.clipboard.writeText(threadLink).then(() => {
+				console.log('serverURL', serverURL);
+				const threadLink 	= `${serverURL}/thread/${threadId}`;
+				const darkLink		= threadLink + '?dark';
+				const urlLightLink	= $(`<a class="tmp_embed_link" data-copy="${threadLink}">URL (light mode)</a>`);
+				const urlDarkLink	= $(`<a class="tmp_embed_link" data-copy="${darkLink}">URL (dark mode)</a>`);
+				const iframeLink	= $(`<a class="tmp_embed_link" data-copy="<iframe src='${threadLink}' style='width:100%;height:100%;border:none;'></iframe>">Embed (light mode)</a>`);
+				const iframeDarkLink= $(`<a class="tmp_embed_link" data-copy="<iframe src='${darkLink}' style='width:100%;height:100%;border:none;'></iframe>">Embed (dark mode)</a>`);
+				$(event.currentTarget).parent().append(
+					'<br class="tmp_br">',
+					urlLightLink,
+					'<br class="tmp_br">',
+					iframeLink,
+					'<br class="tmp_br">',
+					urlDarkLink,
+					'<br class="tmp_br">',
+					iframeDarkLink,
+				);
+				$(event.currentTarget).css({display:'none'});
+				urlLightLink.on('click', (event) => {
+					event.preventDefault();
+					const copyText = $(event.currentTarget).attr('data-copy') || null;
+					if(!copyText){
+						this.feed('Copy failed.', true);
+						return;
+					}
+					navigator.clipboard.writeText(copyText);
 					this.feed('Thread link copied to clipboard.');
-				}).catch(err => {
-					this.feed('Failed to copy thread link to clipboard.', true);
-					console.error('Could not copy text: ', err);
+					$(`.tmp_embed_link`).add(`.tmp_br`).remove(); // remove all tmp_embed_links
+					$('.embed_link').css({display:'block'}); // show the embed link again
+				});
+				urlDarkLink.on('click', (event) => {
+					event.preventDefault();
+					const copyText = $(event.currentTarget).attr('data-copy') || null;
+					if(!copyText){
+						this.feed('Copy failed.', true);
+						return;
+					}
+					navigator.clipboard.writeText(copyText);
+					this.feed('Thread link copied to clipboard.');
+					$(`.tmp_embed_link`).add(`.tmp_br`).remove(); // remove all tmp_embed_links
+					$('.embed_link').css({display:'block'}); // show the embed link again
+				});
+				iframeLink.on('click', (event) => {
+					event.preventDefault();
+					const copyText = $(event.currentTarget).attr('data-copy') || null;
+					if(!copyText){
+						this.feed('Copy failed.', true);
+						return;
+					}
+					navigator.clipboard.writeText(copyText);
+					this.feed('Thread iframe copied to clipboard.');
+					$(`.tmp_embed_link`).add(`.tmp_br`).remove(); // remove all tmp_embed_links
+					$('.embed_link').css({display:'block'}); // show the embed link again
+				});
+				iframeDarkLink.on('click', (event) => {
+					event.preventDefault();
+					const copyText = $(event.currentTarget).attr('data-copy') || null;
+					if(!copyText){
+						this.feed('Copy failed.', true);
+						return;
+					}
+					navigator.clipboard.writeText(copyText);
+					this.feed('Thread iframe copied to clipboard.');
+					$(`.tmp_embed_link`).add(`.tmp_br`).remove(); // remove all tmp_embed_links
+					$('.embed_link').css({display:'block'}); // show the embed link again
 				});
 			});
 			container.find('.chat_opts_container').append(
@@ -1918,9 +1976,22 @@ class AppState {
 			}
 			for(var i=0; i<new_replies.length; i++){
 				const nr = new_replies[i];
+				console.log(nr);
 				const nr_id = nr?.id; // chat id
 				// Ignore this reply if it is in the ignore list
 				if(!nr_id || isNaN(nr_id*1) || ignore_ids.indexOf(nr_id*1) > -1) continue;
+				const tr_id = nr?.thread_id; // thread id
+				// Ignore this reply if it is in the thread that is open.
+				const current_thread_id = this.getCurrentThreadID();
+				if(current_thread_id && current_thread_id == tr_id){
+					// mark this notification as read
+					const captcha_id = this.getSelectedWalletID();
+					const invoice = this.state.invoices?.[captcha_id] || null;
+					if(!invoice || typeof invoice != 'object') return;
+					invoice.notifsIgnoreIDs = invoice.notifsIgnoreIDs || [];
+					invoice.notifsIgnoreIDs.push(nr_id*1);
+					this.saveState();
+				}
 				// Add this to invoice.newReplies if it is not already there
 				var duplicate_found = false;
 				for(var j=0; j<invoice.newReplies.length; j++){
@@ -2958,6 +3029,7 @@ class AppState {
 				$('#spend_input').trigger('keyup');
 				$('#nav-close').trigger('click');
 				this.saveState();
+				$('.original_chat').remove(); // allow the original chat to re-render
 
 				// Reload the thread or get threads again when user changes wallet
 				// if(this.currentThreadID){
