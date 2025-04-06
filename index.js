@@ -700,4 +700,11 @@ $('document').ready(function(){
 			$('#chat_input').val('').trigger('keyup');
 		}
 	});
+
+	// Respond to PING type messages from the background script with PONG type messages.
+	chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+		if (request.type === 'PING') {
+			sendResponse({ type: 'PONG' });
+		}
+	});
 });

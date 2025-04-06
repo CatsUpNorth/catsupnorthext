@@ -43,7 +43,8 @@
     "scripting",
     "activeTab", 
     "externally_connectable", 
-    "webNavigation"
+    "webNavigation",
+    "notifications"
   ],
   "host_permissions": ["https://*/", "http://*/"]
 }
