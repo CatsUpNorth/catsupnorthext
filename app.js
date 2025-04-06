@@ -461,13 +461,25 @@ class AppState {
 		this.buildWalletForm();
 	}
 	
-	createWallet(val, curr) {
+	createWallet(val, curr, ccode = null) {
+
+		console.log(val, curr, ccode);
+		return;
+
+		// default ccode to BTC if not provided
+		if(!ccode || typeof ccode != 'string' || ccode.length < 1 || ['xmr','btc'].indexOf(ccode.toLowerCase()) < 0) ccode = null;
+
+		if(!ccode || ccode.length < 1){
+			this.feed('Invalid currency code.', true);
+			return;
+		}
+
 		const server_url = this.getSetting('server_url');
 		if (!server_url || typeof server_url != 'string' || server_url.length < 1) {
 			this.feed('Server URL not set.', true);
 			return;
 		}
-		const buyEndpoint 	= `${server_url}/buy?val=${encodeURIComponent(val)}&cur=${encodeURIComponent(curr)}`;
+		const buyEndpoint 	= `${server_url}/buy?val=${encodeURIComponent(val)}&cur=${encodeURIComponent(curr)}&ccode=${encodeURIComponent(ccode)}`;
 		fetch(buyEndpoint)
 			.then(response => {
 				if (response.ok) {
@@ -3375,22 +3387,57 @@ class AppState {
         $('#nav-close').show(300);
 
 		// Create wallet form
-		const buyFormContainer = $('<div class="buy_form_container" style="display:none;"></div>');
-        const buyForm = $(
-            '<form>' + 
-                '<label for="number-input">Amount:</label>' + 
-                '<input type="number" id="buy_val" name="number-input" required="">' + 
-                '<label for="select-input">Currency:</label>' + 
-                '<select id="buy_curr" name="select-input" required="">' + 
-                    '<option value="usd">USD</option>' + 
-                '</select>' + 
-                '<input type="submit" value="Create Wallet!">' + 
-            '</form>'
-        );
+		const buyFormContainer 	= $('<div class="buy_form_container" style="display:none;"></div>');
+        const buyForm 			= $(`<form></form>`);
+		const crytpoLabel 		= $('<label for="select-input">Crypto Currency:</label>');
+		const cryptoSelect 		= $(`
+			<select class="buy_wallet_crypto" name="select-input" required>
+				<option value="BTC">BTC</option>
+				<option value="XMR">XMR</option>
+			</select>
+		`);
+		cryptoSelect.on('change', function(event){ // reset form
+			event.preventDefault();
+			$('.buy_wallet_val').val('').trigger('keyup');
+		});
+		const fiatLabel 		= $('<label for="select-input">Buy Value:</label>');
+		const fiatOptions 		= ['USD','CAD','EUR'];
+		const fiatSelect 		= $('<select class="buy_wallet_curr" name="select-input" required></select>');
+		for(let i=0; i<fiatOptions.length; i++){
+			const fiatCode 		= fiatOptions[i];
+			const fiatSymbol 	= this.fiatCodeToSymbol(fiatCode);
+			const fiatOption 	= $(`<option value="${fiatCode}">${fiatSymbol} - ${fiatCode}</option>`);
+			fiatSelect.append(fiatOption);
+		}
+		fiatSelect.on('change', function(event){ // reset form
+			event.preventDefault();
+			$('.buy_wallet_val').val('').trigger('keyup');
+		});
+		const buyAmountLabel 	= $('<label for="select-input">Buy Amount:</label>');
+		const buyAmountInput	= $('<input type="number" class="buy_wallet_val" name="number-input" min="1" required>');
+		buyAmountInput.on('keyup', (e) => {
+			e.preventDefault();
+			const targ 	= $(e.currentTarget);
+			const v 	= isNaN(targ.val()*1)? 0: targ.val()*1;
+			const fcode = $('.buy_wallet_curr').val();
+			const ccode = $('.buy_wallet_crypto').val();
+			const sats 	= this.fiatToSatoshi(v, ccode, fcode);
+			console.log(v,sats,ccode, fcode);
+			if(sats <= 0){
+				$('.buy_wallet_crypto_label').empty().append('&nbsp;');
+			}else{
+				$('.buy_wallet_crypto_label').empty().append(this.satoshiToCryptoStr(sats,ccode));
+			}
+			if(event.key === 'Enter') $('.buy_wallet_submit').trigger('click');
+		});
+		const buyAmountCalc  	= $('<label for="submit" class="buy_wallet_crypto_label" style="font-size:1.4em;">&nbsp;</label>');
+		const submitButton 		= $('<input class="buy_wallet_submit" name="submit" type="submit" value="Create Wallet!" style="margin-top:10px;">');
+		buyForm.append(crytpoLabel,cryptoSelect,fiatLabel,fiatSelect,buyAmountLabel,buyAmountInput,buyAmountCalc,submitButton);
 		buyForm.submit((e) => {
 			e.preventDefault();
-			this.createWallet($('#buy_val').val(), $('#buy_curr').val());
+			this.createWallet($('.buy_wallet_val').first().val(), $('.buy_wallet_curr').first().val(), $('.buy_wallet_crypto').first().val(), true);
 		});
+		
 		const cancelIcon = this.heroicon('x-mark') || '❌';
 		const buyFormCancel = $(`<a href="#" id="cancel_buy_wallet" class="pull-right faded" title="Cancel Wallet Creation">${cancelIcon}&nbsp;Cancel</a>`);
 		buyFormCancel.on('click', (e) => {
@@ -3398,6 +3445,7 @@ class AppState {
 			$('.buy_form_container').slideUp(200);
 		});
         buyFormContainer.append('<hr><h2>Create a new Wallet</h2>',buyForm,'<br>&nbsp;',buyFormCancel,'<hr>');
+
 
         // wallet list
 		const h2 = $('<h2>My&nbsp;Wallets&nbsp;</h2>');

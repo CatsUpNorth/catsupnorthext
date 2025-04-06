@@ -573,7 +573,6 @@ $('document').ready(function(){
 
 	function updateBookmarkCount(){
 		const bookmarks = app.state?.bookmarks || {};
-		console.log({bookmarks});
 		const bookmark_count = Object.keys(bookmarks).length;
 		if(bookmark_count > 0){
 			$('#bookmark_count').empty().append(bookmark_count);

@@ -8,17 +8,11 @@ async function pingSidebar() {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: "PING" }, (response) => {
       if (chrome.runtime.lastError) {
-        // No response, sidebar likely closed
-        console.log("No response to ping, assuming sidebar is closed.");
-        resolve(false);
+        resolve(false); // No response, sidebar likely closed
       } else if (response && response.type === "PONG") {
-        // Sidebar responded, it's open
-        console.log("Sidebar responded to ping, it's open.");
-        resolve(true);
+        resolve(true); // Sidebar responded, it's open
       } else {
-        // Unexpected response, assume closed
-        console.log("Unexpected response to ping, assuming sidebar is closed.");
-        resolve(false);
+        resolve(false); // Unexpected response, assume closed
       }
     });
   });
@@ -34,7 +28,6 @@ async function updateBadge(url, tabId) {
   try {
     const isSidebarOpen = await pingSidebar();
     if (isSidebarOpen) {
-      console.log("Sidebar is open, skipping badge update and server ping.");
       return; // Exit early if sidebar is open
     }
   } catch (error) {
