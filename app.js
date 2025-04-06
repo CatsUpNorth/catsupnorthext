@@ -463,9 +463,6 @@ class AppState {
 	
 	createWallet(val, curr, ccode = null) {
 
-		console.log(val, curr, ccode);
-		return;
-
 		// default ccode to BTC if not provided
 		if(!ccode || typeof ccode != 'string' || ccode.length < 1 || ['xmr','btc'].indexOf(ccode.toLowerCase()) < 0) ccode = null;
 
