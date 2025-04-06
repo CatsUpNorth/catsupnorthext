@@ -76,6 +76,8 @@ class AppState {
 		this.currentMetadata 	= {};
 		this.threadLocked		= null; // set to id if locked
 		this.waitingURL			= null; // used to track real url if thread is locked
+		this.currentTree 		= {}; // site level thread map
+		this.treeVisibleNodes 	= []; // visible nodes in the tree based un current url.
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
 		this.settingsSchema.server_url = 'string';
 		this.loadState();
@@ -99,12 +101,12 @@ class AppState {
 		this.waitingURL = null;
 	}
 	
-	feed(arg, err = false, cloneBefore = null){
+	feed(arg, err = false, cloneBefore = null, replaceGUI = false){
 		if(this.skipFeed && !err){ // used when autoloading threads or chats right after user action
 			this.skipFeed = false;
 			return;
 		}
-		$('.feed_clone').remove();
+		$('.feed_clone').remove(); // remove any existing clones of the feed message.
 		if(err) console.trace(arg);	// for debugging
 		$('#feed_error').toggle((err? true: false));
 		$('#feed').empty().append((arg.toString() || "&nbsp;"));
@@ -116,6 +118,10 @@ class AppState {
 			feed_clone.slideDown(200,()=>{
 				setTimeout(() => { $('.feed_clone').slideUp(200,function(){ $(this).remove(); }); }, 5000); // The next feed message will remove this junk clone
 			});
+		}
+		if(replaceGUI){
+			arg = arg.toString();
+			$('#gui').empty().append(`<h1 style="opacity:0.7;padding:10px;font-weight:300;font-style:italic;"><br><br><img style="display:inline-block;height:1em;" src="images/icon-128.png">&nbsp;${arg}</h1>`);
 		}
 	}
 
@@ -133,52 +139,58 @@ class AppState {
 	}
 
 	parseMarkdown(markdown) {
+		markdown = typeof markdown == 'string'? markdown: '';
 		markdown = this._decodeHTMLEntities(markdown);
 
-		if(!markdown || typeof markdown != 'string' || markdown.length < 1) return '';
+		try{
 
-		// Escape HTML special characters
-		markdown = markdown
-			.replace(/&/g, "&amp;")
-			.replace(/</g, "&lt;")
-			.replace(/>/g, "&gt;");
-		
-		// Handle code blocks (```) - Multiline
-		markdown = markdown.replace(/```([\s\S]+?)```/g, '<pre><code>$1</code></pre>');
-		
-		// Handle inline code (`code`)
-		markdown = markdown.replace(/`([^`]+)`/g, '<code>$1</code>');
-		
-		// Convert headings (e.g., # Heading)
-		markdown = markdown.replace(/^#{6}\s(.+)/gm, '<h6>$1</h6>')
-					   .replace(/^#{5}\s(.+)/gm, '<h5>$1</h5>')
-					   .replace(/^#{4}\s(.+)/gm, '<h4>$1</h4>')
-					   .replace(/^#{3}\s(.+)/gm, '<h3>$1</h3>')
-					   .replace(/^#{2}\s(.+)/gm, '<h2>$1</h2>')
-					   .replace(/^#\s(.+)/gm, '<h1>$1</h1>');
-		
-		// Convert bold (**bold**)
-		markdown = markdown.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-		
-		// Convert italic (*italic*)
-		markdown = markdown.replace(/\*(.*?)\*/g, '<em>$1</em>');
+			// Escape HTML special characters
+			markdown = markdown
+				.replace(/&/g, "&amp;")
+				.replace(/</g, "&lt;")
+				.replace(/>/g, "&gt;");
+			
+			// Handle code blocks (```) - Multiline
+			markdown = markdown.replace(/```([\s\S]+?)```/g, '<pre><code>$1</code></pre>');
+			
+			// Handle inline code (`code`)
+			markdown = markdown.replace(/`([^`]+)`/g, '<code>$1</code>');
+			
+			// Convert headings (e.g., # Heading)
+			markdown = markdown.replace(/^#{6}\s(.+)/gm, '<h6>$1</h6>')
+						   .replace(/^#{5}\s(.+)/gm, '<h5>$1</h5>')
+						   .replace(/^#{4}\s(.+)/gm, '<h4>$1</h4>')
+						   .replace(/^#{3}\s(.+)/gm, '<h3>$1</h3>')
+						   .replace(/^#{2}\s(.+)/gm, '<h2>$1</h2>')
+						   .replace(/^#\s(.+)/gm, '<h1>$1</h1>');
+			
+			// Convert bold (**bold**)
+			markdown = markdown.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+			
+			// Convert italic (*italic*)
+			markdown = markdown.replace(/\*(.*?)\*/g, '<em>$1</em>');
+	
+			// convert images ![alt](url)
+			markdown = markdown.replace(/!\[(.*?)\]\((.*?)\)/g, '<img data-src="$2" src="" alt="$1" style="max-width:100%;">');
+			
+			// Convert links [text](url)
+			markdown = markdown.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
+			
+			// Convert unordered lists (- item)
+			markdown = markdown.replace(/^- (.*)$/gm, '<li>$1</li>');
+			markdown = markdown.replace(/(<li>.*<\/li>)/g, '<ul>$1</ul>');
+			
+			// Convert ordered lists (1. item)
+			markdown = markdown.replace(/^\d+\. (.*)$/gm, '<li>$1</li>');
+			markdown = markdown.replace(/(<li>.*<\/li>)/g, '<ol>$1</ol>');
+			
+			// Convert new lines to <br> tags for line breaks
+			markdown = markdown.replace(/\n/g, '<br>');
+		}catch(e){
+			console.error('Error parsing markdown:', e);
+		}
 
-		// convert images ![alt](url)
-		markdown = markdown.replace(/!\[(.*?)\]\((.*?)\)/g, '<img data-src="$2" src="" alt="$1" style="max-width:100%;">');
-		
-		// Convert links [text](url)
-		markdown = markdown.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
-		
-		// Convert unordered lists (- item)
-		markdown = markdown.replace(/^- (.*)$/gm, '<li>$1</li>');
-		markdown = markdown.replace(/(<li>.*<\/li>)/g, '<ul>$1</ul>');
-		
-		// Convert ordered lists (1. item)
-		markdown = markdown.replace(/^\d+\. (.*)$/gm, '<li>$1</li>');
-		markdown = markdown.replace(/(<li>.*<\/li>)/g, '<ol>$1</ol>');
-		
-		// Convert new lines to <br> tags for line breaks
-		markdown = markdown.replace(/\n/g, '<br>');
+		markdown = typeof markdown == 'string'? markdown: '';
 
 		return markdown.split('<br>'); // return array of lines, first line used for preview.
 	}
@@ -1016,7 +1028,6 @@ class AppState {
 					this.feed('Server URL not set.', true);
 					return;
 				}
-				console.log('serverURL', serverURL);
 				const threadLink 	= `${serverURL}/thread/${threadId}`;
 				const darkLink		= threadLink + '?dark';
 				const urlLightLink	= $(`<a class="tmp_embed_link" data-copy="${threadLink}">URL (light mode)</a>`);
@@ -1438,6 +1449,7 @@ class AppState {
 	}
 
 	loadThread(threadId = null, password = null, force_restart = false) {
+		$('#tree_count_container').css({ display: 'none' });
 		if (!threadId || isNaN(threadId * 1)) threadId = this.getCurrentThreadID();
 		if (this.paused || !threadId) return;
 		this.midRequest = true;
@@ -1730,6 +1742,16 @@ class AppState {
 					return;
 				}
 				this.feed(data.msg);
+
+				// show site thread count
+				const tree_count = data?.tree_count || 0;
+				if(tree_count > 0){
+					$('#tree_count').empty().append(tree_count);
+					$('#tree_count_container').css({display: 'inline'});
+				}else{
+					$('#tree_count_container').css({display: 'none'});
+				}
+
 				const threads = data.threads;
 				if(!threads || !Array.isArray(threads) || threads.length < 1){
 					$('#gui').append('<h1 style="opacity:0.7;padding:10px;font-weight:300;font-style:italic;"><br><br><img style="display:inline-block;height:1em;" src="images/icon-128.png">&nbsp;Be the first to create a thread on this page!</h1>');
@@ -1791,6 +1813,201 @@ class AppState {
 				$('#ext_search').attr('placeholder',`Search ${threadCount} Thread${( threadCount == 1? '': 's')}...`);
 				$('#chat_input').focus();
 			});
+	}
+
+	buildUrlHierarchy(urls) {
+		// Sort URLs by length, shortest first
+		urls.sort((a, b) => a.length - b.length);
+
+		const urlMap = new Map(); // URL to node reference
+		const root = {};
+
+		for (const url of urls) {
+			if (!url || typeof url != 'string') continue; // invalid URL
+			let parent = null;
+
+			// Look for the longest prefix that is already in the map
+			for (const parent_candidate of urlMap.keys()) {
+				const candidate = parent_candidate.replace(/\/$/, ''); // remove trailing slash
+				if (url.startsWith(candidate) && url !== candidate) {
+					const urlBalance 	= url.replace(candidate, ''); // needs to start with /, ?, &, #, etc.
+					const firstChar 	= urlBalance.length > 0? urlBalance.charAt(0): '';
+					if (firstChar == '/' || firstChar == '?' || firstChar == '&' || firstChar == '#'){
+						parent = parent_candidate;
+					}
+				}
+			}
+
+			const node = {};
+			urlMap.set(url, node);
+
+			if (parent) {
+				urlMap.get(parent)[url] = node;
+			} else {
+				root[url] = node;
+			}
+		}
+
+		return root;
+	}
+
+	createTreeDivs(arg, parentContainer = null){ // recursive function to create the tree divs for the site tree.
+		var is_top = false;
+		if(!parentContainer){
+			parentContainer = $('#gui'); // jquery object expected.
+			parentContainer.empty(); // clear the container
+			is_top = true; // top level tree div
+		}
+		if(!arg || typeof arg != 'object') return; // invalid
+		const nodeCount = Object.keys(arg).length;
+		const countSpan = parentContainer.find('.tree_child_part_count').first();
+		var parentURL 	= parentContainer.attr('data-url') || null;
+			parentURL 	= parentURL? parentURL.replace(/\/$/, ''): null; // remove trailing slash
+		if(countSpan && countSpan.length > 0 && nodeCount > 0){
+			countSpan.text(nodeCount).removeClass('faded').addClass('error'); // update the count of child parts
+		}
+		for(var key in arg){
+			var showURL   	= parentURL? '' + key.replace(parentURL,''): key + ''; // parent URL parts
+				showURL		= showURL.replace('https://','').replace('http://','') + ''; // remove http(s)
+			const o 		= arg[key];
+			const threads 	= this.currentTree[key] || null;
+			const trdCount 	= threads? threads.length: 0;
+			if(trdCount < 1) continue; // no threads in this part, skip it.
+			const treeDiv 	= $(
+				`<div class="tree_part${(is_top? ' top_part': '')}" data-url="${key}">
+					&nbsp;
+					<a class="pull-right tree_part_opener" href="#">
+						<span class="tree_child_part_count"></span>
+						&nbsp;
+						<span class="tree_child_thread_count">${trdCount}</span>
+						&nbsp;
+						<span class="tree_part_opener_icon">
+							${this.heroicon('chevron-down')}
+						</span>
+					</a>
+					<a href="${key}" class="tree_part_link" target="_blank">${showURL}</a>
+				 </div>`
+			);
+			parentContainer.append(treeDiv); // append the tree div to the parent container
+			treeDiv.find('.tree_part_opener').on('click', (e) => { // show all cild tree parts.
+				e.preventDefault();
+				e.stopPropagation();
+				const target 		= $(e.currentTarget);
+				if(target.hasClass('top_part')) return; // never collapse the top part
+				const childParts 	= target.parent().children('.tree_part');
+				const childThreads 	= target.parent().children('.tree_thread');
+				const childCount 	= childParts.length + childThreads.length;
+				const childrenVis 	= childParts.filter(':visible').length + childThreads.filter(':visible').length;
+				if (childrenVis < childCount) {
+					childParts.removeClass('search_hide').removeClass('search_show'); // show all hidden children
+					childThreads.removeClass('search_hide').removeClass('search_show'); // show all hidden threads
+					childParts.slideDown(200); // show all hidden children
+					childThreads.slideDown(200); // show all hidden threads
+					target.find('.tree_part_opener_icon').empty().append(this.heroicon('chevron-up')); // change icon to up arrow
+				} else {
+					childParts.removeClass('search_hide').removeClass('search_show'); // hide all visible children
+					childThreads.removeClass('search_hide').removeClass('search_show'); // hide all visible threads
+					childParts.slideUp(200); // hide all visible children
+					childThreads.slideUp(200); // hide all visible threads
+					target.find('.tree_part_opener_icon').empty().append(this.heroicon('chevron-down')); // change icon to down arrow
+				}
+			});
+			for(var i = 0; i < threads.length; i++){
+				const title 		= threads[i]?.thread_title || null;
+				const author		= threads[i]?.thread_author || null;
+				const channel   	= threads[i]?.channel || null;
+				const thread_id 	= threads[i]?.thread_id || null;
+				console.log(title, author, channel, thread_id);
+				if(!thread_id || !author || !title) continue; // invalid thread, skip it.
+				const channelURL 	= (channel && typeof channel == 'string')? 	`${this.getSetting('server_url')}/u/${author}/${channel}`: null;
+				const channelLink 	= (channel && channelURL)? 					`<span class="chat_info pull-right">&nbsp;in&nbsp;<a href="${channelURL}" target="_blank">${channel}</a></span>`: '';
+				const authorLink 	= (author && author.startsWith('$'))? 		`<a href="${this.getSetting('server_url')}/u/${author}" target="_blank">${author}</a>`: author;
+				const threadDiv = $(
+					`<div class="tree_thread" data-thread-id="${thread_id}">
+						<strong class="chat_info">
+							${thread_id}
+						</strong>&nbsp;
+						<span class="chat_info">${authorLink}</span>${channelLink}
+						<br>
+						<span class="chat_info">${title}</span>
+					 </div>`
+				);
+				threadDiv.append(this.createFollowLink(threads[i].alias, threads[i].is_me, threads[i].is_free),'&nbsp;&nbsp;',this.createUserPageLink(threads[i].alias));
+				treeDiv.append(threadDiv); // append the thread div to the tree div
+			}
+			if(key == this.getCurrentURL()){
+				treeDiv.addClass('current_url'); // highlight the current URL
+				// show each parent div in the hierarchy
+				treeDiv.parents('.tree_part').addClass('current_url_stack'); // show all parents of this div
+			}
+			// recursive call to create the subparts
+			this.createTreeDivs(o, treeDiv); // pass the treeDiv as the parent container for subparts
+		}
+
+		// display all top_part divs and all that contain .current_url element at any level.
+		if($('.current_url').length > 0){
+			setTimeout(function(){
+				$('#gui').scrollTop(0); // scroll to the top of the gui container
+				$('.current_url').get(0).scrollIntoView({ behavior: "smooth", block: "center" }); // scroll to the current URL div
+			},200);
+		}
+
+		setTimeout(function(){
+			const treePartCount = $('.tree_part').length;
+			const treeThreadCount = $('.tree_thread').length;
+			$('#ext_search').attr('placeholder', `Search ${treePartCount} URL${(treePartCount == 1 ? '' : 's')} or ${treeThreadCount} thread${(treeThreadCount == 1 ? '' : 's')}...`);
+		},100);
+	}
+
+	loadSiteTree(){ // show the hierarchy of threads for the WEBSITE (base url) at current URL.
+		this.currentTree = {};
+		$('#gui').empty().append('<h1 style="opacity:0.7;padding:10px;font-weight:300;font-style:italic;"><br><br><img style="display:inline-block;height:1em;" src="images/icon-128.png">&nbsp;Loading Site Tree...</h1>');
+		const server_url = this.getSetting('server_url');
+		if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')) return;
+		const siteTreeURL = `${server_url}/url_thread_tree`;
+		const formData = new FormData();
+		formData.append('url', this.getCurrentURL());
+		formData.append('captcha_id', this.getSelectedWalletID());
+		formData.append('secret', this.getInvoiceSecret(this.getSelectedWalletID()));
+		fetch(siteTreeURL, {
+			method: 'POST',
+			body: formData
+		})
+		.then(response => {
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
+			}
+		})
+		.then(json => {
+			const data = typeof json == 'string'? JSON.parse(json): json;
+			if(!data || typeof data != 'object'){
+				this.feed('Server response parse failed.', true, null, true);
+				return;
+			}
+			if (data.error) {
+				this.feed(data.error, true, null, true);
+				return;
+			}
+			this.feed(data.msg);
+			this.currentTree = data?.url_threads || {};
+			if(this.currentTree && typeof this.currentTree == 'object' && Object.keys(this.currentTree).length > 0){
+				const treeKeys = Object.keys(this.currentTree);
+				this.createTreeDivs(this.buildUrlHierarchy(treeKeys)); // create the tree divs from the hierarchy
+			}else{
+				this.feed("No threads found for this website.", true, null, true);
+				return;
+			}
+		})
+		.catch(error => {
+			this.feed('There has been a problem with your fetch operation. See console.', true, null, true);
+			console.error(error);
+		})
+		.finally(() => {
+			this.midRequest = false;
+			$('#chat_input').focus();
+		});
 	}
 
 	// Update settings
@@ -1976,7 +2193,6 @@ class AppState {
 			}
 			for(var i=0; i<new_replies.length; i++){
 				const nr = new_replies[i];
-				console.log(nr);
 				const nr_id = nr?.id; // chat id
 				// Ignore this reply if it is in the ignore list
 				if(!nr_id || isNaN(nr_id*1) || ignore_ids.indexOf(nr_id*1) > -1) continue;

@@ -520,17 +520,24 @@ $('document').ready(function(){
 		$('#chat_input').val('').trigger('keyup');
 	});
 	$('#ext_search').on('keyup', function(){
-		const query = $(this).val();
+		const query = $(this).val().toString().toLowerCase();
 		if (query.length < 3){
 			$('.search_hide').removeClass('search_hide');
+			$('.search_show').removeClass('search_show');
 			return;
 		}
-		$('.chat').add('.thread').each(function(){
+		$('.chat').add('.thread').add('.tree_part').add('.tree_thread').each(function(){
 			const chat_text = $(this).text().toLowerCase();
 			if(chat_text.includes(query)){
 				$(this).removeClass('search_hide');
+				if($(this).hasClass('tree_part') || $(this).hasClass('tree_thread')){
+					$(this).addClass('search_show');
+				}
 			}else{
 				$(this).addClass('search_hide');
+				if($(this).hasClass('tree_part') || $(this).hasClass('tree_thread')){
+					$(this).removeClass('search_show');
+				}
 			}
 		});
 	});
@@ -561,6 +568,10 @@ $('document').ready(function(){
 		$('#thread_locker').css({display:'inline-block'});
 		$('#thread_unlocker').css({display:'none'});
 		app.unlockThread();
+	});
+
+	$('#tree_count_container').on('click', function(){
+		app.loadSiteTree();
 	});
 
 	addChatInputListeners();
