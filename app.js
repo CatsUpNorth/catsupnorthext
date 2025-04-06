@@ -30,6 +30,7 @@ class AppState {
 			show_conversions:		[ "BTC_USD", "XMR_USD" ],
 			blur_setting:			'blur', // show, blur, or hide
 			dwell_time_per_dollar:	0, // how long a tip chat stays visible per dollar spent
+			font_size:				'0.7em',
 		};
         this.settingsSchema 	= {
             server_url:				'string',
@@ -43,6 +44,7 @@ class AppState {
 			show_conversions:		'array',
 			blur_setting:			'string',
 			dwell_time_per_dollar:	'number',
+			font_size:				'string',
         };
 		this.settingsDescriptions = {
 			server_url:				'The URL of the server to send chats to.',
@@ -56,6 +58,7 @@ class AppState {
 			show_conversions:		'Which conversion rates to show (must be available from server).',
 			blur_setting:			'How to handle blurred content. You can either show them, blur them (you can click to view), or hide them all together.',
 			dwell_time_per_dollar:	'How many seconds a chat with tip is highlighted per dollar spent. Set to zero to hide if you are not streaming.',
+			font_size:				'General font size of extension text. Some elements may be larger or smaller.',
 		};
 		this.settingsLimits 	= {
 			refresh_threads_microseconds: 	[ 2500, 60000 ], // 2.5 seconds to 60 seconds
@@ -99,6 +102,67 @@ class AppState {
 		this.threadLocked = null;
 		this.getThreads(this.waitingURL); // refresh threads on current page
 		this.waitingURL = null;
+	}
+
+	bookmarkThread(thread_id = null, url = null, content = null, author = null){
+		try{
+			this.state.bookmarks[thread_id] = {
+				url:		url,
+				content:	content,
+				author:		author,
+			};
+			this.saveState();
+		}catch(e){
+			console.error(e);
+		}
+	}
+
+	unbookmarkThread(thread_id = null){
+		try{
+			delete this.state.bookmarks[thread_id];
+			this.saveState();
+		}catch(e){
+			console.error(e);
+		}
+	}
+
+	buildBookmarkList(){
+		this.setCurrentThreadID(null); // should stop the polling
+		$('#exit_thread_container').slideUp(200);
+		$('#gui').empty().append('<br><br>');
+		const bookmarks = this.state?.bookmarks || {};
+		if(!bookmarks || Object.keys(bookmarks).length < 1){
+			this.feed('No bookmarks found.', false, null, true);
+			return;
+		}
+		for(let thread_id in bookmarks){
+			if(!bookmarks[thread_id] || !bookmarks[thread_id].url || bookmarks[thread_id].url.length < 1) continue;
+			const bookmark 		= bookmarks[thread_id];
+			const url 			= bookmark.url || null;
+			const content 		= bookmark.content || null;
+			const author 		= bookmark.author || null;
+			const link 			= $(`<a href="${url}" data-thread-id="${thread_id}" target="_blank"><strong class="faded">${thread_id}</strong> ${content}</a>`);
+			link.on('click', (e) => {
+				e.preventDefault();
+				const ctarg = $(e.currentTarget);
+				const threadId = ctarg.attr('data-thread-id');
+				this.forwardedThreadID = threadId;
+				// continue with default action of opening the link in a new tab
+				window.open(ctarg.attr('href'), '_blank');
+			});
+			const trash_icon 	= this.heroicon('trash-solid') || '❌';
+			const del_link 		= $(`<a href="#" class="pull-right" class="error delete_bookmark" data-thread-id="${thread_id}">${trash_icon} Delete</a>`);
+			del_link.on('click', (e) => {
+				e.preventDefault();
+				const ctarg = $(e.currentTarget);
+				const threadId = ctarg.attr('data-thread-id');
+				this.unbookmarkThread(threadId);
+				this.buildBookmarkList();
+			});
+			const bookmarkContainer = $(`<div class="bookmark_container" data-thread-id="${thread_id}"></div>`);
+			bookmarkContainer.append(link, `<br>by ${author}`,del_link,`<br><span class="faded" style="font-style:italic;font-size:0.7em;">${url}</span>`);
+			$('#gui').append(bookmarkContainer);
+		}
 	}
 	
 	feed(arg, err = false, cloneBefore = null, replaceGUI = false){
@@ -211,44 +275,11 @@ class AppState {
 				<span class="content_preview">${first_line}</span>
 				<div class="markdown_content" style="display:none;">${markdown_lines.join('<br>')}</div>
 			</div>`);
-		if(first_line_len > preview_lim || markdown_lines.length > 1 || first_line_len < 1){
-			content_div.append('<br>');
-			const charCount  	= content.length;
-			const expandIcon 	= this.heroicon('chevron-down') || '↓';
-			const verb 			= img_count > 0? `img${(img_count  == 1? '': 's')} (${img_count})`: `more (${charCount})`;
-			const expandLink 	= $(`<a class="expand_content" data-chat-id="${chat_id}" data-verb="${verb}">${verb} ${expandIcon}</a>`);
-			expandLink.on('click', (e) => {
-				e.preventDefault();
-				const ctarg 		= $(e.currentTarget);
-				ctarg.css({opacity:0});
-				const chatId 		= ctarg.attr('data-chat-id');
-				const contentCont	= $(`.content_container[data-chat-id="${chatId}"]`);
-				const contentPrev	= contentCont.find('.content_preview');
-				const markdownCont	= contentCont.find('.markdown_content');
-				if(markdownCont.is(':visible')){ // if visible, we hide the markdown and show the preview
-					const icon = this.heroicon('chevron-down') || '↓';
-					const verb = ctarg.attr('data-verb');
-					ctarg.empty().append(`${verb} ${icon}`);
-					contentPrev.slideDown(200);
-					markdownCont.slideUp(200);
-				}else{ // show markdown and load images
-					markdownCont.find('img').each((i, img) => {
-						const src = $(img).attr('data-src');
-						if(src && src.length > 0) $(img).attr('src', src);
-					});
-					const icon = this.heroicon('chevron-up') || '↑';
-					ctarg.empty().append(`less ${icon}`);
-					contentPrev.slideUp(200);
-					markdownCont.slideDown(200);
-				}
-				ctarg.animate({opacity:1}, 200);
-			});
-			content_div.append(expandLink);
-		}
+
+		
 
 		if(thread_id){ // div with thread_opener link
-			const openIcon 			= this.heroicon('chevron-right') || '→';
-			const loadThreadLink 	= $(`<a class="thread_opener pull-right" data-thread-id="${thread_id}" data-chat-id="${chat_id}">open thread ${openIcon}</a>`);
+			const loadThreadLink 	= $(`<a class="thread_opener" data-thread-id="${thread_id}" data-chat-id="${chat_id}">${first_line} ›</a>`);
 			loadThreadLink.on('click', (e) => {
 				e.preventDefault();
 				if(this.paused) return;
@@ -286,7 +317,42 @@ class AppState {
 					this.loadThread(threadId);
 				}
 			});
-			content_div.append('<br>&nbsp;',loadThreadLink);
+			content_div.find('.content_preview').empty().append(loadThreadLink);
+		}	
+
+		if(first_line_len > preview_lim || markdown_lines.length > 1 || first_line_len < 1){
+			content_div.append('<br>');
+			const charCount  	= content.length;
+			const expandIcon 	= this.heroicon('chevron-down') || '↓';
+			const verb 			= img_count > 0? `img${(img_count  == 1? '': 's')} (${img_count})`: `more (${charCount})`;
+			const expandLink 	= $(`<a class="expand_content" data-chat-id="${chat_id}" data-verb="${verb}">${verb} ${expandIcon}</a>`);
+			expandLink.on('click', (e) => {
+				e.preventDefault();
+				const ctarg 		= $(e.currentTarget);
+				ctarg.css({opacity:0});
+				const chatId 		= ctarg.attr('data-chat-id');
+				const contentCont	= $(`.content_container[data-chat-id="${chatId}"]`);
+				const contentPrev	= contentCont.find('.content_preview');
+				const markdownCont	= contentCont.find('.markdown_content');
+				if(markdownCont.is(':visible')){ // if visible, we hide the markdown and show the preview
+					const icon = this.heroicon('chevron-down') || '↓';
+					const verb = ctarg.attr('data-verb');
+					ctarg.empty().append(`${verb} ${icon}`);
+					contentPrev.slideDown(200);
+					markdownCont.slideUp(200);
+				}else{ // show markdown and load images
+					markdownCont.find('img').each((i, img) => {
+						const src = $(img).attr('data-src');
+						if(src && src.length > 0) $(img).attr('src', src);
+					});
+					const icon = this.heroicon('chevron-up') || '↑';
+					ctarg.empty().append(`less ${icon}`);
+					contentPrev.slideUp(200);
+					markdownCont.slideDown(200);
+				}
+				ctarg.animate({opacity:1}, 200);
+			});
+			content_div.append(expandLink);
 		}
 
 		return content_div;
@@ -298,7 +364,7 @@ class AppState {
 
 	// Load the state from chrome.storage.local
 	loadState() {
-		chrome.storage.local.get(['invoices', 'current_user_url', 'settings', 'currentCaptcha'], (result) => {
+		chrome.storage.local.get(['invoices', 'current_user_url', 'settings', 'currentCaptcha', 'bookmarks'], (result) => {
 			if (chrome.runtime.lastError) {
 				console.error('Error loading state:', chrome.runtime.lastError);
 				return;
@@ -307,6 +373,7 @@ class AppState {
 			this.state.current_user_url = result.current_user_url 	|| '';
 			this.state.settings 		= result.settings 			|| {};
 			this.state.currentCaptcha 	= result.currentCaptcha 	|| null;
+			this.state.bookmarks 		= result.bookmarks 			|| {};
 
 			if (Object.keys(this.state.settings).length < Object.keys(this.settingsDefault).length) {
 				this.state.settings = JSON.parse(JSON.stringify(this.settingsDefault));
@@ -347,7 +414,6 @@ class AppState {
 
 		// Save currentCaptcha to state for use when the extension is re-opened.
 		this.state.currentCaptcha = this.currentCaptcha + '';
-
 		chrome.storage.local.set(this.state, () => {
 			if (chrome.runtime.lastError) {
 				console.error('Error saving state:', chrome.runtime.lastError);
@@ -1365,6 +1431,15 @@ class AppState {
 		});
 	}
 
+	applyFontSizeSetting(){
+		const font_size = this.getSetting('font_size');
+		if(!font_size || typeof font_size != 'string' || font_size.length < 1) return;
+		// validate that the font size ends with em and is a number from 0.5 to 1.5
+		const font_size_num = parseFloat(font_size.replace('em',''));
+		if(isNaN(font_size_num) || font_size_num < 0.5 || font_size_num > 1.5 || !font_size.endsWith('em')) return;
+		$('body').css({fontSize: font_size});
+	}
+
 	addBlurLink(container){
 		const chat_id 	= $(container).attr('data-id');
 		if(!chat_id || isNaN(chat_id*1)) return;
@@ -1453,6 +1528,13 @@ class AppState {
 		if (!threadId || isNaN(threadId * 1)) threadId = this.getCurrentThreadID();
 		if (this.paused || !threadId) return;
 		this.midRequest = true;
+
+		const bookmarks = this.state?.bookmarks || {};
+		if (bookmarks && threadId in bookmarks) {
+			$('#thread_bookmarker').removeClass('faded');
+		}else{
+			$('#thread_bookmarker').addClass('faded');
+		}
 	
 		// Check if the conversion rates are current within the last minute (also fetches notifications)
 		const secondsSinceEpoch = Math.round(new Date().getTime() / 1000);
@@ -1577,7 +1659,7 @@ class AppState {
 					}
 					chatDivClasses = chatDivClasses.join(' ');
 					const chatDiv = $(
-						`<div class="${chatDivClasses}" data-id="${chat.chat_id}" data-reply-to-id="${chat.reply_to_id}" data-date-submitted="${chat.date_submitted}" style="display:${(isTop ? 'block' : 'hidden')};">
+						`<div class="${chatDivClasses}" data-id="${chat.chat_id}" data-reply-to-id="${chat.reply_to_id}" data-date-submitted="${chat.date_submitted}" data-alias="${(chat?.alias || 'anon')}" data-url="${(chat?.url || '')}" style="display:${(isTop ? 'block' : 'hidden')};">
 						 	${superChatStr}
 						</div>`
 					);
@@ -1917,7 +1999,6 @@ class AppState {
 				const author		= threads[i]?.thread_author || null;
 				const channel   	= threads[i]?.channel || null;
 				const thread_id 	= threads[i]?.thread_id || null;
-				console.log(title, author, channel, thread_id);
 				if(!thread_id || !author || !title) continue; // invalid thread, skip it.
 				const channelURL 	= (channel && typeof channel == 'string')? 	`${this.getSetting('server_url')}/u/${author}/${channel}`: null;
 				const channelLink 	= (channel && channelURL)? 					`<span class="chat_info pull-right">&nbsp;in&nbsp;<a href="${channelURL}" target="_blank">${channel}</a></span>`: '';
@@ -2475,7 +2556,16 @@ class AppState {
             var input 		= null;
 			const desc 		= this.settingsDescriptions?.[key] || null;
 			var label 		= `<label for="${key}" title="${(desc? desc: '')}">${key.replace(/_/g, ' ').toUpperCase()}</label>`;
-            if(key == 'blur_setting') {
+            if (key == 'font_size') { // font size dropdown
+				input 			= $(`<select name="font_size" title="${(desc? desc: '')}"></select>`);
+				const options 	= ['0.5em','0.6em','0.7em','0.8em','0.9em','1em','1.1em','1.2em','1.3em','1.4em','1.5em'];
+				const dflt		= this.state.settings?.[key] || this.settingsDefault?.[key] || null;
+				for(var j=0; j<options.length; j++){
+					const opt 		= options[j];
+					const selected 	= dflt == opt? ' selected': '';
+					input.append(`<option value="${opt}"${selected}>${opt}</option>`);
+				}
+			} else if(key == 'blur_setting') {
 				input 			= $(`<select name="blur_setting" title="${(desc? desc: '')}"></select>`);
 				const options 	= ['show','blur','hide'];
 				const dflt		= this.state.settings?.[key] || this.settingsDefault?.[key] || null;
@@ -2509,11 +2599,11 @@ class AppState {
 			} else {
                 const typ 	= typeof this.settingsDefault[key] === 'number' ? 'number' : 'text';
 				const val 	= this.state.settings?.[key] || this.settingsDefault[key];
-				input 		= $(`<input type="${typ}" title="${(desc? desc: '')}" name="${key}" value="${val}"><br><br>`);
+				input 		= $(`<input type="${typ}" title="${(desc? desc: '')}" name="${key}" value="${val}">`);
             }
 			if(!input) continue; // skip if no input
 			if(label) settingsForm.append(label,'<br>');
-            settingsForm.append(input,'<br><br>');
+            settingsForm.append(input,'<br>');
 			
 			if(key == 'server_url'){
 				// Get all server_urls from invoices in this.state.invoices
@@ -2528,11 +2618,12 @@ class AppState {
 				server_urls = [...new Set(server_urls)].sort();
 				// Add a button to set the input value to each of the available server_urls
 				server_urls.forEach(server_url => {
-					const urlset = $(`<a>Set to ${server_url}</a>`);
-					urlset.textContent = ``;
+					const urlset = $(`<a data-url="${server_url}">Set to ${server_url}</a>`);
 					urlset.on('click', (e) => {
 						e.preventDefault();
-						input.value = server_url;
+						const target = $(e.currentTarget);
+						const server_url = target.data('url');
+						$('input[name="server_url"]').val(server_url);
 					});
 					settingsForm.append(urlset,'<br>');
 				});
@@ -2563,6 +2654,7 @@ class AppState {
 			}
 			this.saveState();
 			this.updateConversionRates();
+			this.applyFontSizeSetting();
 			$('#nav-close').trigger('click');
 		});
 		$('#form_container').append(settingsForm);

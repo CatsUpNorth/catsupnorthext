@@ -380,6 +380,7 @@ $('document').ready(function(){
 
 	/* Initialize app state */
 	app = new AppState();
+	app.applyFontSizeSetting();
 	$('#version_str').text(app.version);
 	$('#nav_opener').on('click', function(){ 
 		if(app) app.getThreads(); // turn off the chat polling.
@@ -569,6 +570,41 @@ $('document').ready(function(){
 		$('#thread_unlocker').css({display:'none'});
 		app.unlockThread();
 	});
+
+	function updateBookmarkCount(){
+		const bookmarks = app.state?.bookmarks || {};
+		console.log({bookmarks});
+		const bookmark_count = Object.keys(bookmarks).length;
+		if(bookmark_count > 0){
+			$('#bookmark_count').empty().append(bookmark_count);
+		}else{
+			$('#bookmark_count').empty().append('0');
+		}
+	}
+
+	setTimeout(updateBookmarkCount, 100); // wait for the bookmarks to load.
+	setTimeout(updateBookmarkCount, 300); // wait for the bookmarks to load.
+	setTimeout(updateBookmarkCount, 1000); // wait for the bookmarks to load.
+
+	$('#thread_bookmarker').on('click',function(){
+		const thread_id = app.getCurrentThreadID();
+		if((app.state?.bookmarks || {}).hasOwnProperty(thread_id)){ // remove bookmark
+			app.unbookmarkThread(thread_id);
+			$('#thread_bookmarker').addClass('faded');
+		}else{
+			const url 		= $('.original_chat').attr('data-url') || null;
+			const content 	= $('.original_chat').find('.content_preview').text().trim() || '...';
+			const author 	= $('.original_chat').attr('data-alias') || 'anon';
+			app.bookmarkThread(thread_id, url, content, author);
+			$('#thread_bookmarker').removeClass('faded');
+		}
+		updateBookmarkCount();
+	});
+
+	$('#bookmarks_opener').on('click', function(){
+		app.buildBookmarkList();
+	});
+
 
 	$('#tree_count_container').on('click', function(){
 		app.loadSiteTree();

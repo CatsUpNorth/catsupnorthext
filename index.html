@@ -14,7 +14,14 @@
 		<div id="nav">
 			<a id="server_link" target="_blank">-</a>
 			<span class="pull-right">
-				<a id="notifications_opener" class="faded">
+				<a id="bookmarks_opener" class="faded" title="Bookmarks">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6" stroke="currentColor" class="size-6" style="height:14px;">
+						<path fill-rule="evenodd" d="M6.32 2.577a49.255 49.255 0 0 1 11.36 0c1.497.174 2.57 1.46 2.57 2.93V21a.75.75 0 0 1-1.085.67L12 18.089l-7.165 3.583A.75.75 0 0 1 3.75 21V5.507c0-1.47 1.073-2.756 2.57-2.93Z" clip-rule="evenodd" />
+					</svg>
+					<sup id="bookmark_count">0</sup>			  
+				</a>
+				&nbsp;&nbsp;
+				<a id="notifications_opener" class="faded" title="Notifications">
 					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6" style="height:14px;">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
 					</svg>
@@ -77,12 +84,18 @@
 		<div id="exit_thread_container" style="display:none;padding:6px;">
 			<a id="exit_thread">‹&nbsp;Exit&nbsp;Thread&nbsp;<span id="thread_id_indicator"></span></a>
 			<span class="pull-right">
-				<a class="pull-right" id="thread_locker">
+				<a id="thread_bookmarker" class="faded" title="Bookmark this thread">
+					bookmark&nbsp;<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6" stroke="currentColor" class="size-6" style="height:1em;">
+						<path fill-rule="evenodd" d="M6.32 2.577a49.255 49.255 0 0 1 11.36 0c1.497.174 2.57 1.46 2.57 2.93V21a.75.75 0 0 1-1.085.67L12 18.089l-7.165 3.583A.75.75 0 0 1 3.75 21V5.507c0-1.47 1.073-2.756 2.57-2.93Z" clip-rule="evenodd" />
+					</svg>
+				</a>
+				&nbsp;&nbsp;
+				<a id="thread_locker">
 					lock&nbsp;<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="height:1em;">
 						<path d="M18 1.5c2.9 0 5.25 2.35 5.25 5.25v3.75a.75.75 0 0 1-1.5 0V6.75a3.75 3.75 0 1 0-7.5 0v3a3 3 0 0 1 3 3v6.75a3 3 0 0 1-3 3H3.75a3 3 0 0 1-3-3v-6.75a3 3 0 0 1 3-3h9v-3c0-2.9 2.35-5.25 5.25-5.25Z" />
 					</svg>
 				</a>
-				<a class="pull-right error" id="thread_unlocker" style="display:none;">
+				<a class="error" id="thread_unlocker" style="display:none;">
 					unlock&nbsp;<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="height:1em;">
 						<path fill-rule="evenodd" d="M8 1a3.5 3.5 0 0 0-3.5 3.5V7A1.5 1.5 0 0 0 3 8.5v5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 11.5 7V4.5A3.5 3.5 0 0 0 8 1Zm2 6V4.5a2 2 0 1 0-4 0V7h4Z" clip-rule="evenodd"/>
 					</svg>

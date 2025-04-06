@@ -108,6 +108,16 @@ a:hover{
   opacity:1;
 }
 
+a.thread_opener{
+  color: light-dark(var(--lm-txt), var(--dm-txt));
+}
+
+a.expand_content{
+  font-size: 0.8em;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
 #container {
   display: flex;
   flex-direction: column;
@@ -456,4 +466,9 @@ svg {
 }
 .tree_part.search_show, .tree_thread.search_show{
   display: block !important;
+}
+
+.bookmark_container{
+  margin-top: 5px;
+  margin-bottom: 15px;
 }
