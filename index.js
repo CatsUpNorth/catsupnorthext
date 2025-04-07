@@ -527,18 +527,14 @@ $('document').ready(function(){
 			$('.search_show').removeClass('search_show');
 			return;
 		}
-		$('.chat').add('.thread').add('.tree_part').add('.tree_thread').each(function(){
+		$('.chat').add('.thread').add('.tree_part').add('.tree_thread').add('.bookmark_container').each(function(){
 			const chat_text = $(this).text().toLowerCase();
 			if(chat_text.includes(query)){
 				$(this).removeClass('search_hide');
-				if($(this).hasClass('tree_part') || $(this).hasClass('tree_thread')){
-					$(this).addClass('search_show');
-				}
+				if($(this).hasClass('tree_part') || $(this).hasClass('tree_thread')) $(this).addClass('search_show');
 			}else{
 				$(this).addClass('search_hide');
-				if($(this).hasClass('tree_part') || $(this).hasClass('tree_thread')){
-					$(this).removeClass('search_show');
-				}
+				if($(this).hasClass('tree_part') || $(this).hasClass('tree_thread')) $(this).removeClass('search_show');
 			}
 		});
 	});

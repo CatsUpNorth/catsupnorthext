@@ -163,6 +163,8 @@ class AppState {
 			bookmarkContainer.append(link, `<br>by ${author}`,del_link,`<br><span class="faded" style="font-style:italic;font-size:0.7em;">${url}</span>`);
 			$('#gui').append(bookmarkContainer);
 		}
+
+		$('#ext_search').attr('placeholder','Search Bookmarks...');
 	}
 	
 	feed(arg, err = false, cloneBefore = null, replaceGUI = false){
@@ -3419,7 +3421,6 @@ class AppState {
 			const fcode = $('.buy_wallet_curr').val();
 			const ccode = $('.buy_wallet_crypto').val();
 			const sats 	= this.fiatToSatoshi(v, ccode, fcode);
-			console.log(v,sats,ccode, fcode);
 			if(sats <= 0){
 				$('.buy_wallet_crypto_label').empty().append('&nbsp;');
 			}else{
