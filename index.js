@@ -527,7 +527,7 @@ $('document').ready(function(){
 			$('.search_show').removeClass('search_show');
 			return;
 		}
-		$('.chat').add('.thread').add('.tree_part').add('.tree_thread').add('.bookmark_container').each(function(){
+		$('.chat').add('.thread').add('.tree_part').add('.tree_thread').add('.bookmark_container').add('.invoice').each(function(){
 			const chat_text = $(this).text().toLowerCase();
 			if(chat_text.includes(query)){
 				$(this).removeClass('search_hide');

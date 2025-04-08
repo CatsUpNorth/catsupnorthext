@@ -129,7 +129,13 @@ class AppState {
 	buildBookmarkList(){
 		this.setCurrentThreadID(null); // should stop the polling
 		$('#exit_thread_container').slideUp(200);
-		$('#gui').empty().append('<br><br>');
+		const exitIcon = this.heroicon('x-mark') || '❌';
+		const exitLink = $(`<a href="#" class="exit_to_thread pull-right" id="exit_bookmark_list">${exitIcon} Close</a>`);
+		exitLink.on('click', (e) => {
+			e.preventDefault();
+			this.getThreads();
+		});
+		$('#gui').empty().append('&nbsp;',exitLink,'<br><br>');
 		const bookmarks = this.state?.bookmarks || {};
 		if(!bookmarks || Object.keys(bookmarks).length < 1){
 			this.feed('No bookmarks found.', false, null, true);
@@ -1948,7 +1954,13 @@ class AppState {
 		var is_top = false;
 		if(!parentContainer){
 			parentContainer = $('#gui'); // jquery object expected.
-			parentContainer.empty(); // clear the container
+			const exitIcon = this.heroicon('x-mark') || '❌';
+			const exitLink = $(`<a href="#" class="exit_to_thread pull-right" id="exit_site_tree">${exitIcon} Close</a>`);
+			exitLink.on('click', (e) => {
+				e.preventDefault();
+				this.getThreads();
+			});
+			parentContainer.empty().append('&nbsp;',exitLink,'<br><br>');
 			is_top = true; // top level tree div
 		}
 		if(!arg || typeof arg != 'object') return; // invalid
@@ -3869,8 +3881,61 @@ class AppState {
 
 		$('.wallet_checkbox').off().on('change', (e) => {
 			const check_count = $('.wallet_checkbox:checked').length;
-			if(check_count > 1){
-				const group_btn = $(`<button class="wallet_group_btn">Group ${check_count} Wallets</button>`);
+			if(check_count == 1){
+				const captcha_id = $('.wallet_checkbox:checked').attr('data-captcha-id');
+				const dust_btn = $(`<button class="wallet_dust_btn wallet_opt_btn" data-captcha_id="${captcha_id}">Transfer Balance</button>`); // captcha_id is out address
+				dust_btn.on('click', (e) => {
+					e.preventDefault();
+					const captcha_id = $(e.currentTarget).attr('data-captcha_id');
+					$('.invoice').addClass('highlighted');
+					$('#wallet_check_options').empty().append(`<span class="select_second_wallet_msg" data-captcha-id="${captcha_id}">Select the destination wallet.</span>`);
+				});
+				const delete_btn = $(`<button class="wallet_delete_btn wallet_opt_btn" data-captcha-id="${captcha_id}">Delete</button>`);
+				delete_btn.on('click', (e) => {
+					e.preventDefault();
+					const captcha_id 	= $(e.currentTarget).attr('data-captcha-id');
+					const confirm_btn 	= $(`<button class="wallet_delete_btn wallet_opt_btn" data-captcha_id="${captcha_id}">Confirm Delete</button>`);
+					const confirm_txt	= $(`<input type="text" class="wallet_delete_confirm" placeholder="Type 'delete' to confirm." style="width:100%;margin-top:10px;">`);
+					const cancel_btn	= $(`<button class="wallet_delete_cancel wallet_opt_btn">Cancel</button>`);
+					confirm_btn.on('click', (e) => {
+						e.preventDefault();
+						const confirm_txt = $('.wallet_delete_confirm').first().val();
+						// Make sure user typed 'delete' to confirm or 
+						if(confirm_txt != 'delete'){
+							this.feed('Please type "delete" to confirm.', true, $('.wallet_delete_confirm'));
+							return;
+						}
+						const captcha_id = $(e.currentTarget).attr('data-captcha_id');
+						delete this.state.invoices[captcha_id];
+						this.saveState();
+						this.buildWalletForm();
+					});
+					cancel_btn.on('click', (e) => {
+						// uncheck all invoice checkboxes and trigger change event
+						$('.wallet_checkbox').prop('checked', false).trigger('change');
+					});
+					setTimeout(function(){ // focus
+						$('.wallet_delete_confirm').focus();
+					},50);
+					confirm_txt.on('keyup', (e) => {
+						e.preventDefault();
+						// Alt+Enter (admin shortcut)
+						if(e.key === 'Enter' && e.altKey){
+							$('.wallet_delete_confirm').val('delete');
+							$('.wallet_delete_btn').first().trigger('click');
+						}
+					});
+					$('#wallet_check_options').empty().append('Are you sure you want to delete this wallet?<br><br><strong>This action cannot be undone.</strong><br><br>',confirm_txt,'<br><br>',confirm_btn,cancel_btn);
+				});
+				$('#wallet_check_options').empty().append(dust_btn,delete_btn).slideDown(200);
+			}else if(check_count > 1){
+				if(check_count == 2 && $('.select_second_wallet_msg').length > 0){
+					captcha_id = $('.select_second_wallet_msg').attr('data-captcha-id');
+					const second_wallet = $('.wallet_checkbox:checked').not(`[data-captcha-id="${captcha_id}"]`).first().attr('data-captcha-id');
+					$('.select_second_wallet_msg').empty().append(second_wallet);
+					return;
+				}
+				const group_btn = $(`<button class="wallet_group_btn wallet_opt_btn">Group ${check_count} Wallets</button>`);
 				group_btn.on('click', (e) => {
 					e.preventDefault();
 					try{
@@ -3931,7 +3996,7 @@ class AppState {
 						console.error(e);
 					}
 				});
-				$('#wallet_check_options').empty(group_btn).append(group_btn).slideDown(200);
+				$('#wallet_check_options').empty().append(group_btn).slideDown(200);
 			}else{
 				$('#wallet_check_options').slideUp(200,function(){
 					$(this).empty();
@@ -3950,7 +4015,8 @@ class AppState {
             e.preventDefault();
             this.recoverInvoice(e.currentTarget);
         });
-        $('#form_container').append('<hr><h2>Recover a Wallet',recoveryForm);
+        $('#form_container').append('<br><br><hr><h2>Recover a Wallet',recoveryForm);
+		$('#ext_search').attr('placeholder','Search Wallets...');
 	}
 
 	redeemInvoice(captchaId){

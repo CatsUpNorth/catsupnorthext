@@ -213,6 +213,11 @@ input[type="submit"] {
   border-right: 1px solid light-dark(var(--lm-faint-border), var(--dm-faint-border));
   border-bottom: 1px solid light-dark(var(--lm-faint-border), var(--dm-faint-border));
 }
+
+.invoice.highlighted { /* Tells users they should select one */
+  background-color: light-dark(var(--lm-faint-bg), var(--dm-faint-bg));
+}
+
 .balance{
   color: light-dark(var(--lm-success), var(--dm-success));
 }
@@ -306,6 +311,7 @@ hr{
 #form_container {
   display: none;
   max-height: 100vh;
+  min-height: 100vh;
   overflow-y: auto;
   background-color: light-dark(var(--lm-faint-bg), var(--dm-faint-bg));
   padding: 15px;
@@ -328,6 +334,10 @@ hr{
 }
 #exit_thread_container{
   border-bottom: light-dark(1px solid var(--lm-faint-border), 1px solid var(--dm-faint-border));
+}
+.exit_to_thread{
+  margin-top: 5px;
+  color: light-dark(var(--lm-faded-txt), var(--dm-faded-txt));
 }
 .search_hide{
   display:none;
@@ -471,4 +481,31 @@ svg {
 .bookmark_container{
   margin-top: 5px;
   margin-bottom: 15px;
+}
+
+.wallet_opt_btn{
+  border: none;
+  border-radius: 5px;
+  color: black;
+  font-size: 1.3em;
+  box-shadow: 0px 0px 5px light-dark(var(--lm-faint-border), var(--dm-faint-border));
+  cursor: pointer;
+  margin: 5px;
+  padding: 5px;
+}
+
+.wallet_group_btn{
+  background-color: light-dark(var(--lm-superchat), var(--dm-superchat));
+}
+
+.wallet_dust_btn{
+  background-color: light-dark(var(--lm-success), var(--dm-success));
+}
+
+.wallet_delete_btn{
+  background-color: light-dark(var(--lm-error), var(--dm-error));
+}
+
+.wallet_delete_cancel{
+  background-color: grey;
 }
