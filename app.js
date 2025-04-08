@@ -127,6 +127,7 @@ class AppState {
 	}
 
 	buildBookmarkList(){
+		$('#nav_dropdown').slideUp(200); // hide the nav dropdown if open.
 		this.setCurrentThreadID(null); // should stop the polling
 		$('#exit_thread_container').slideUp(200);
 		const exitIcon = this.heroicon('x-mark') || '❌';
@@ -157,7 +158,7 @@ class AppState {
 				window.open(ctarg.attr('href'), '_blank');
 			});
 			const trash_icon 	= this.heroicon('trash-solid') || '❌';
-			const del_link 		= $(`<a href="#" class="pull-right" class="error delete_bookmark" data-thread-id="${thread_id}">${trash_icon} Delete</a>`);
+			const del_link 		= $(`<a href="#" class="pull-right delete_bookmark" data-thread-id="${thread_id}">${trash_icon} Delete</a>`);
 			del_link.on('click', (e) => {
 				e.preventDefault();
 				const ctarg = $(e.currentTarget);
@@ -1772,6 +1773,7 @@ class AppState {
 	}
 	
 	getThreads(url_arg = null){
+
 		if(this.paused) return;
 		if(this.threadLocked){
 			this.waitingURL = url_arg;
@@ -1783,6 +1785,14 @@ class AppState {
 			this.updateCurrentUserURL(url_arg);
 		}
 		const url = this.getCurrentURL();
+
+		const ignore_prefixes = ['chrome://','file://','about:','data:','javascript:','view-source:','chrome-extension://'];
+		for(var i=0; i<ignore_prefixes.length; i++){
+			if(url.startsWith(ignore_prefixes[i])){
+				this.feed('This URL is not supported.', true);
+				return;
+			}
+		}
 
 		this.allThreadChatIds = [];
 		this.midRequest = true;
@@ -2064,6 +2074,7 @@ class AppState {
 	}
 
 	loadSiteTree(){ // show the hierarchy of threads for the WEBSITE (base url) at current URL.
+		$('#nav_dropdown').slideUp(200); // hide the nav dropdown if open.
 		this.currentTree = {};
 		$('#gui').empty().append('<h1 style="opacity:0.7;padding:10px;font-weight:300;font-style:italic;"><br><br><img style="display:inline-block;height:1em;" src="images/icon-128.png">&nbsp;Loading Site Tree...</h1>');
 		const server_url = this.getSetting('server_url');
@@ -3502,17 +3513,18 @@ class AppState {
 			const pay_class     = this.cryptoToSatoshi(invoice.btc_paid, invoice?.crypto_currency)? 'paid': 'unpaid';
             const bal_class     = invoice.balance > 0? 'balance': 'no_balance';
 			const invoiceDiv    = $(
-                `<div class="card invoice" data-captcha-id="${name}" data-date-created="${invoice.created}" data-balance="${invoice.balance}">` + 
-					`<span style="font-weight:900;font-size:3em;">${crypto_symbol}</span>${group_str}<br>` + 
-					`<a class="invoice_server_link" href="${invoice.server_url}" target="_blank">${invoice.server_url.replace('https://','').replace('http://','')}</a><br>` +
-					`<input type="checkbox" class="wallet_checkbox" data-captcha-id="${name}" style="display:inline-block;width:auto;">` + 
-                    `<strong class="${bal_class} alias_strong" style="font-size:1.6em;">${use_name}</strong><br>` +
-                    `Rate Quote: ${invoice.rate_quote} sat${( invoice.rate_quote == 1? '': 's' )}<br>` +
-                    `Payment: <span class="${pay_class}">${invoice.btc_paid} (${this.cryptoToFiatStr(invoice.btc_paid,invoice?.crypto_currency)})</span><br>` +
-                    `Balance: <span class="${bal_class}">${this.satoshiToCrypto(invoice.balance,invoice?.crypto_currency)} (${this.satoshiToFiatStr(invoice.balance,invoice?.crypto_currency)})</span><br>` +
-                    `Created: ${invoice.created}<br>` +
-                    inv_link + 
-                `</div>`
+                `<div class="card invoice" data-captcha-id="${name}" data-date-created="${invoice.created}" data-balance="${invoice.balance}" data-ccode="${crypto_code}">
+					<span style="font-weight:900;font-size:3em;">${crypto_symbol}</span>${group_str}<br>
+					<a class="invoice_server_link" href="${invoice.server_url}" target="_blank">${invoice.server_url.replace('https://','').replace('http://','')}</a><br>
+					<input type="checkbox" class="wallet_checkbox" data-captcha-id="${name}" style="display:inline-block;width:auto;">
+					<span class="dust_verb" data-captcha_id="${name}" style="font-style:italic;"></span>
+                    <strong class="${bal_class} alias_strong" style="font-size:1.6em;">${use_name}</strong><br>
+                    Rate Quote: ${invoice.rate_quote} sat${( invoice.rate_quote == 1? '': 's' )}<br>
+                    Payment: <span class="${pay_class}">${invoice.btc_paid} (${this.cryptoToFiatStr(invoice.btc_paid,invoice?.crypto_currency)})</span><br>
+                    Balance: <span class="${bal_class}">${this.satoshiToCrypto(invoice.balance,invoice?.crypto_currency)} (${this.satoshiToFiatStr(invoice.balance,invoice?.crypto_currency)})</span><br>
+                    Created: ${invoice.created}<br>
+                    ${inv_link} 
+                </div>`
             );
 
 			var repoElement = $('<span class="faded" style="text-decoration:line-through;" title="No recovery phrase found.">Recovery Phrase</span>');
@@ -3880,14 +3892,28 @@ class AppState {
         });
 
 		$('.wallet_checkbox').off().on('change', (e) => {
+			$('.invoice').css({opacity: 1}).find('input[type="checkbox"]').prop('disabled', false);
 			const check_count = $('.wallet_checkbox:checked').length;
 			if(check_count == 1){
+				$('.dust_verb').empty();
 				const captcha_id = $('.wallet_checkbox:checked').attr('data-captcha-id');
 				const dust_btn = $(`<button class="wallet_dust_btn wallet_opt_btn" data-captcha_id="${captcha_id}">Transfer Balance</button>`); // captcha_id is out address
 				dust_btn.on('click', (e) => {
 					e.preventDefault();
-					const captcha_id = $(e.currentTarget).attr('data-captcha_id');
-					$('.invoice').addClass('highlighted');
+					const captcha_id 	= $(e.currentTarget).attr('data-captcha_id');
+					const invoice 		= this.state.invoices[captcha_id];
+					const ccode 		= invoice?.crypto_currency || null;
+					const balance		= invoice?.balance || 0;
+					if(!balance || balance < 1){
+						this.feed('No balance found for this wallet.', true, $(e.currentTarget));
+						return;
+					}
+					if(!ccode){
+						this.feed('No crypto currency found for this wallet.', true, $(e.currentTarget));
+						return;
+					}
+					$(`.dust_verb[data-captcha_id="${captcha_id}"]`).empty().append(`&nbsp;From&nbsp;`);
+					$('.invoice').not(`.invoice[data-ccode="${ccode}"]`).css({opacity: 0.4}).find('input[type="checkbox"]').prop('disabled', true);
 					$('#wallet_check_options').empty().append(`<span class="select_second_wallet_msg" data-captcha-id="${captcha_id}">Select the destination wallet.</span>`);
 				});
 				const delete_btn = $(`<button class="wallet_delete_btn wallet_opt_btn" data-captcha-id="${captcha_id}">Delete</button>`);
@@ -3930,11 +3956,92 @@ class AppState {
 				$('#wallet_check_options').empty().append(dust_btn,delete_btn).slideDown(200);
 			}else if(check_count > 1){
 				if(check_count == 2 && $('.select_second_wallet_msg').length > 0){
-					captcha_id = $('.select_second_wallet_msg').attr('data-captcha-id');
-					const second_wallet = $('.wallet_checkbox:checked').not(`[data-captcha-id="${captcha_id}"]`).first().attr('data-captcha-id');
-					$('.select_second_wallet_msg').empty().append(second_wallet);
+					const captcha_id	= $('.select_second_wallet_msg').attr('data-captcha-id');
+					const dest_captcha 	= $('.wallet_checkbox:checked').not(`[data-captcha-id="${captcha_id}"]`).first().attr('data-captcha-id');
+					const in_invoice 	= this.state.invoices[dest_captcha] || null;
+					const out_invoice	= this.state.invoices[captcha_id] || null;
+					if(!in_invoice || !out_invoice){
+						this.feed('Wallet Error.', true, $(e.currentTarget));
+						return;
+					}
+					const in_alias 		= in_invoice?.alias || dest_captcha.substr(0, 8);
+					const out_alias 	= this.state.invoices[captcha_id]?.alias || captcha_id.substr(0, 8);
+					const out_balance 	= out_invoice?.balance || 0;
+					const out_ccode 	= out_invoice?.crypto_currency || null;
+					const out_fiat_bal	= this.satoshiToFiatStr(out_balance, out_ccode);
+					const cancel_icon	= this.heroicon('x-mark') || '❌';
+					const cancel_btn	= $(`<button class="wallet_delete_cancel wallet_opt_btn pull-right">${cancel_icon}&nbsp;Cancel</button>`);
+					const confirm_btn 	= $(`<button class="wallet_dust_btn wallet_opt_btn" data-out-captcha="${captcha_id}" data-in-captcha="${dest_captcha}">Complete Transfer</button>`);
+					cancel_btn.on('click', (e) => {
+						e.preventDefault();
+						this.buildWalletForm(); // Need to account for the fact that checkboxes have been removed.
+					});
+					confirm_btn.on('click', (e) => {
+						e.preventDefault();
+						$('#wallet_check_options').empty().append('<br><br>Please wait...');
+						const server_url = this.getSetting('server_url');
+						if(!server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+							this.feed('No server URL set.', true);
+							return;
+						}
+						const in_captcha 	= $(e.currentTarget).attr('data-in-captcha');
+						const out_captcha 	= $(e.currentTarget).attr('data-out-captcha');
+						const in_secret 	= this.state.invoices[in_captcha]?.secret || null;
+						const out_secret 	= this.state.invoices[out_captcha]?.secret || null;
+						if(!in_secret || !out_secret){
+							this.feed('Wallet Error.', true, $(e.currentTarget))
+							return;
+						}
+						const dustEndpoint 	= `${server_url}/dust_invoice`;
+						const formData 		= new FormData();
+						formData.append('in_captcha', in_captcha);
+						formData.append('out_captcha', out_captcha);
+						formData.append('in_secret', in_secret);
+						formData.append('out_secret', out_secret);
+						formData.append('captcha_id', captcha_id);
+						fetch(dustEndpoint, {
+							method: 'POST',
+							body: formData
+						})
+						.then(response => {
+							if (response.ok) {
+								return response.text();
+							} else {
+								throw new Error('Network response was not ok');
+							}
+						})
+						.then(json => {
+							const data = typeof json == 'string'? JSON.parse(json): json;
+							if(!data || typeof data != 'object'){
+								this.feed('Server response parse failed.', true, $(e.currentTarget));
+								return;
+							}
+							if(data.error){
+								this.feed(data.error, true, $(e.currentTarget));
+							}else if(data.msg){
+								this.feed(data.msg);
+								const in_captcha 	= data?.in_captcha 	|| null;
+								const out_captcha 	= data?.out_captcha || null;
+								const in_balance 	= data?.in_balance 	|| null;
+								const out_balance 	= data?.out_balance || null;
+								if(in_captcha && out_captcha && !isNaN(in_balance*1) && !isNaN(out_balance*1)){
+									this.state.invoices[in_captcha].balance 	= in_balance*1;
+									this.state.invoices[out_captcha].balance 	= out_balance*1;
+									this.skipFeed = true;
+									this.buildWalletForm();
+								}
+							}
+						})
+						.catch(error => {
+							this.feed('There has been a problem with your fetch operation. See console.', true, $(e.currentTarget));
+							console.error(error);
+						})
+					});
+					$('#wallet_check_options').empty().append(`Transfer ${out_fiat_bal} from ${out_alias} to ${in_alias}?<br><br>`,confirm_btn,cancel_btn);
+					$(`.dust_verb[data-captcha_id="${dest_captcha}"]`).empty().append(`&nbsp;To&nbsp;`);
 					return;
 				}
+				$('.dust_verb').empty();
 				const group_btn = $(`<button class="wallet_group_btn wallet_opt_btn">Group ${check_count} Wallets</button>`);
 				group_btn.on('click', (e) => {
 					e.preventDefault();
@@ -3998,6 +4105,7 @@ class AppState {
 				});
 				$('#wallet_check_options').empty().append(group_btn).slideDown(200);
 			}else{
+				$('.dust_verb').empty();
 				$('#wallet_check_options').slideUp(200,function(){
 					$(this).empty();
 				});

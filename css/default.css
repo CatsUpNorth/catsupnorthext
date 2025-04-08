@@ -479,8 +479,16 @@ svg {
 }
 
 .bookmark_container{
+  border-top: 1px solid rgba(125,125,125,0.25);
   margin-top: 5px;
+  padding-top: 5px;
   margin-bottom: 15px;
+}
+
+.delete_bookmark{
+  color: light-dark(var(--lm-error), var(--dm-error));
+  font-size: 0.8em;
+  cursor: pointer;
 }
 
 .wallet_opt_btn{
@@ -508,4 +516,18 @@ svg {
 
 .wallet_delete_cancel{
   background-color: grey;
+}
+
+.select_second_wallet_msg{
+  display:inline-block;
+  font-size: 1.7em;
+  color: light-dark(var(--lm-superchat), var(--dm-superchat));
+  background-color: light-dark(var(--lm-dark-bg), var(--dm-dark-bg));
+  padding: 5px;
+  margin: 15px;
+  border-radius: 5px;
+  box-shadow: 0px 0px 5px light-dark(var(--lm-faint-border), var(--dm-faint-border));
+  font-weight: 600;
+  text-align: center;
+  border: 3px dashed light-dark(var(--lm-superchat), var(--dm-superchat));
 }
