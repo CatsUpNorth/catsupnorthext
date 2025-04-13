@@ -4,38 +4,44 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 });
 
-async function pingSidebar() {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: "PING" }, (response) => {
-      if (chrome.runtime.lastError) {
-        resolve(false); // No response, sidebar likely closed
-      } else if (response && response.type === "PONG") {
-        resolve(true); // Sidebar responded, it's open
-      } else {
-        resolve(false); // Unexpected response, assume closed
-      }
-    });
-  });
+function clearBadge(){
+  console.log('Clearing badge...');
+  chrome.action.setBadgeText({ text: '' });
+  chrome.action.setBadgeBackgroundColor({ color: '#FFFFFF' });
+  return true;
 }
 
+async function pingSidebar() {
+  return new Promise((resolve) => {
+    var isSidebarOpen = false; // Reset the flag before sending the message
+    console.log('Pinging sidebar...');
+    chrome.runtime.sendMessage({ type: "PING" }, (response) => {
+      try{
+        isSidebarOpen = response?.status == "PONG"? true: false;
+        console.log('Sidebar is open:', isSidebarOpen);
+        if(isSidebarOpen) clearBadge(); // Clear badge if sidebar is open
+      }catch(e){
+        console.error("Error in PING response", e);
+        isSidebarOpen = true; // If the sidebar doesn't respond, assume it is open on another tab.
+      }
+      resolve(isSidebarOpen); // Resolve the promise regardless of the response
+    });
+  });
+};
+
 async function updateBadge(url, tabId) {
-  const urlLength = url.length;
-  // clear badge
-  chrome.action.setBadgeText({ text: '', tabId });
-  chrome.action.setBadgeBackgroundColor({ color: '#FFFFFF', tabId });
-
-  // IMPORTANT: If the side panel is open, do not show the badge and do not ping the server
-  try {
-    const isSidebarOpen = await pingSidebar();
-    if (isSidebarOpen) {
-      return; // Exit early if sidebar is open
+  try{
+    const isSidebarOpen = await pingSidebar(); // Check if sidebar is open
+    if (isSidebarOpen){
+      clearBadge(); // Clear badge if sidebar is open
+      return; // Don't update badge if sidebar is open
     }
-  } catch (error) {
-    console.error("Error pinging sidebar:", error);
-    // Proceed assuming sidebar is closed if pinging fails
-  }
-
-  if( urlLength > 0) {
+    url = typeof url == 'string' ? url : url.toString();
+    const ignore_prefixes = ['chrome://','file://','about:','data:','javascript:','view-source:','chrome-extension://'];
+    if (url.length <= 0 || ignore_prefixes.some(prefix => url.startsWith(prefix))) {
+      clearBadge(); // Clear badge for ignored URLs
+      return; // Ignore URLs with specified prefixes
+    }
     fetch('https://catsupnorth.com/get_url_thread_count', {
       method: 'POST',
       headers: {
@@ -45,23 +51,60 @@ async function updateBadge(url, tabId) {
     })
     .then(response => response.json())
     .then(data => {
-      const threadCount = data?.url_thread_count || 0;
-      if (threadCount < 1) return;
-      chrome.action.setBadgeText({ text: (threadCount > 9 ? '9+' : threadCount.toString()), tabId });
-      chrome.action.setBadgeBackgroundColor({ color: '#FF6E6E', tabId });
+      console.log('Response from server:', data);
+      try{
+        const threadCount = data?.url_thread_count || 0;
+        if (threadCount < 1){
+          console.log('Thread count is less than 1, clearing badge...');
+          clearBadge(); // Clear badge if thread count is less than 1
+          return; // Exit early if thread count is less than 1
+        }
+        console.log('Setting badge thread count:', threadCount);
+        chrome.action.setBadgeText({ text: (threadCount > 9 ? '9+' : threadCount.toString()), tabId });
+        chrome.action.setBadgeBackgroundColor({ color: '#FF6E6E', tabId });
+      }catch(e){
+        console.error("Error in parsing response", e);
+      }
     })
     .catch(error => {
       console.error('Error fetching thread count:', error);
     });
+  }catch(e){
+    console.error("Error in updateBadge", e);
+    return; // Exit early if error occurs
   }
 }
-// When a tab is updated, show the length of the url with setBadgeText
+
+// When a tab is updated, show thread count in badge
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url) updateBadge(tab.url, tabId);
+  if (changeInfo.status === 'complete' && tab.url){
+    updateBadge(tab.url, tabId);
+    // tell chrome to wait for async response
+    return true;
+  }else{
+    // do nothing, do not wait
+    return false;
+  }
 });
-// When a tab is activated, show the length of the url with setBadgeText
+
+// When a tab is activated, show thread count in badge
 chrome.tabs.onActivated.addListener((activeInfo) => {
   chrome.tabs.get(activeInfo.tabId, (tab) => {
-    if (tab.url) updateBadge(tab.url, activeInfo.tabId);
+    if (tab.url){
+      updateBadge(tab.url, activeInfo.tabId);
+      // tell chrome to wait for async response
+      return true;
+    }else{
+      // do nothing, do not wait
+      return false;
+    }
   });
+});
+
+// Listen for message type "EXTENSION_OPENED" from the sidebar
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === "EXTENSION_LOADED") {
+    console.log('Extension sidebar loaded.');
+    clearBadge(); // Clear badge when sidebar is opened
+  }
 });

@@ -392,10 +392,6 @@ hr{
   padding:5px;
 }
 
-svg {
-  fill: currentColor;
-}
-
 .blur_hide {
   display:none !important;
 }
@@ -530,4 +526,18 @@ svg {
   font-weight: 600;
   text-align: center;
   border: 3px dashed light-dark(var(--lm-superchat), var(--dm-superchat));
+}
+
+.deposit_container{
+  font-size: 0.8em;
+  display: block;
+  border-top: 1px solid light-dark(var(--lm-faint-border), var(--dm-faint-border));
+}
+
+.invoice_deposits_drawer{
+  display: none;
+  border-radius: 5px;
+  padding: 15px;
+  background-color: light-dark(var(--lm-dark-bg), var(--dm-dark-bg));
+  border: 1px solid light-dark(var(--lm-success), var(--dm-success));
 }

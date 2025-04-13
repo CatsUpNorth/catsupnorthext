@@ -647,11 +647,15 @@ $('document').ready(function(){
 	
 	// Track when the user's current url changes and load threads for the new page (new tab, new page, etc.)
 	var setWebNavListeners = setInterval(() => {
-		if(!app) return; // app is loaded when page ready.
+		// app is loaded when page ready.
+		if(!app) return; 
 		if(!chrome || !chrome.webNavigation) return;
-		chrome.webNavigation.onCompleted.addListener((details) => { // Monitor when a user navigates to a new page in the current tab
-			if(!app) return; // app is loaded when page ready.
+		chrome.webNavigation.onCompleted.addListener((details) => { // Monitor when a user navigates to a new page in the current tab'
+			// app is loaded when page ready.
+			if(!app) return; 
 			chrome.tabs.get(details.tabId, (tab) => {
+				// return if tab not active
+				if(!tab.active) return;
 				if (tab && tab.url && tab.url != lastUrlLoaded){
 					app.getThreads(tab.url);
 					lastUrlLoaded = tab.url;
@@ -662,8 +666,11 @@ $('document').ready(function(){
 		});
 		// Add a listener for sites that use pushState to change the URL without reloading the page.
 		chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
-			if(!app) return; // app is loaded when page ready.
+			// app is loaded when page ready.
+			if(!app) return; 
 			chrome.tabs.get(details.tabId, (tab) => {
+				// return if tab not active
+				if(!tab.active) return; 
 				if (tab && tab.url && tab.url != lastUrlLoaded){
 					app.getThreads(tab.url);
 					lastUrlLoaded = tab.url;
@@ -676,8 +683,11 @@ $('document').ready(function(){
 		setWebNavListeners = null;
 	},100);
 	chrome.tabs.onActivated.addListener((activeInfo) => { // Listen for navigation on current tab
-		if(!app) return; // app is loaded when page ready.
+		// app is loaded when page ready.
+		if(!app) return; 
 		chrome.tabs.get(activeInfo.tabId, (tab) => {
+			// return if tab not active
+			if(!tab.active) return;
 			if (tab && tab.url && tab.url != lastUrlLoaded){
 				app.getThreads(tab.url);
 				lastUrlLoaded = tab.url;
@@ -687,7 +697,10 @@ $('document').ready(function(){
 		});
 	});
 	chrome.tabs.onCreated.addListener((tab) => { // Listen for new tab creation
-		if(!app) return; // app is loaded when page ready.
+		// app is loaded when page ready.
+		if(!app) return; 
+		// return if tab not active
+		if(!tab.active) return; 
 		if (tab && tab.url && tab.url != lastUrlLoaded){
 			app.getThreads(tab.url);
 			lastUrlLoaded = tab.url;
@@ -695,11 +708,20 @@ $('document').ready(function(){
 			$('#chat_input').val('').trigger('keyup');
 		}
 	});
-
-	// Respond to PING type messages from the background script with PONG type messages.
 	chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		if (request.type === 'PING') {
-			sendResponse({ type: 'PONG' });
+			console.log("Received PING from service worker.");
+			sendResponse({ status: 'PONG' });
+		}
+		return true; // Keep the message channel open for responses
+	});
+
+	// Send 'EXTENSION_LOADED' message to the content script
+	chrome.runtime.sendMessage({ type: 'EXTENSION_LOADED' }, (response) => {
+		if (chrome.runtime.lastError) {
+			console.error('Error sending message:', chrome.runtime.lastError);
+		} else {
+			console.log('Response from content script:', response);
 		}
 	});
 });
