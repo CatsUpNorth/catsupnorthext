@@ -29,7 +29,7 @@ async function pingSidebar() {
     }
   });
 }
-async function updateBadge(url, tabId) {
+async function updateBadge(url, tabId){
   try {
     const isSidebarOpen = await pingSidebar();
     console.log("Sidebar open?", isSidebarOpen);
@@ -37,59 +37,58 @@ async function updateBadge(url, tabId) {
       console.log("Sidebar is open, skipping badge update.");
       await chrome.action.setBadgeText({ text: '' });
       await chrome.action.setBadgeBackgroundColor({ color: '#FFFFFF' });
-      return true;
+    }else{
+      url = typeof url === 'string' ? url : url.toString();
+      const ignore_prefixes = [
+        'chrome://',
+        'file://',
+        'about:',
+        'data:',
+        'javascript:',
+        'view-source:',
+        'chrome-extension://',
+      ];
+      if (
+        url.length <= 0 ||
+        ignore_prefixes.some((prefix) => url.startsWith(prefix))
+      ) {
+        console.log('clearing badge, URL is empty or ignored:', url);
+        await chrome.action.setBadgeText({ text: '' });
+        await chrome.action.setBadgeBackgroundColor({ color: '#FFFFFF' });
+        return true;
+      }
+  
+      console.log("Fetching thread count for URL:", url);
+      const response = await fetch('https://catsupnorth.com/get_url_thread_count', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+  
+      const data = await response.json();
+      console.log('Response from server:', data);
+  
+      const threadCount = data?.url_thread_count || 0;
+      if (threadCount < 1) {
+        console.log('Thread count is less than 1, clearing badge...');
+        await chrome.action.setBadgeText({ text: '' });
+        await chrome.action.setBadgeBackgroundColor({ color: '#FFFFFF' });
+        return true;
+      }
+  
+      console.log('Setting badge thread count:', threadCount);
+      await chrome.action.setBadgeText({
+        text: threadCount > 9 ? '9+' : threadCount.toString(),
+        tabId,
+      });
+      await chrome.action.setBadgeBackgroundColor({
+        color: '#FF6E6E',
+        tabId,
+      });
+  
     }
-
-    url = typeof url === 'string' ? url : url.toString();
-    const ignore_prefixes = [
-      'chrome://',
-      'file://',
-      'about:',
-      'data:',
-      'javascript:',
-      'view-source:',
-      'chrome-extension://',
-    ];
-    if (
-      url.length <= 0 ||
-      ignore_prefixes.some((prefix) => url.startsWith(prefix))
-    ) {
-      console.log('clearing badge, URL is empty or ignored:', url);
-      await chrome.action.setBadgeText({ text: '' });
-      await chrome.action.setBadgeBackgroundColor({ color: '#FFFFFF' });
-      return true;
-    }
-
-    console.log("Fetching thread count for URL:", url);
-    const response = await fetch('https://catsupnorth.com/get_url_thread_count', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ url }),
-    });
-
-    const data = await response.json();
-    console.log('Response from server:', data);
-
-    const threadCount = data?.url_thread_count || 0;
-    if (threadCount < 1) {
-      console.log('Thread count is less than 1, clearing badge...');
-      await chrome.action.setBadgeText({ text: '' });
-      await chrome.action.setBadgeBackgroundColor({ color: '#FFFFFF' });
-      return true;
-    }
-
-    console.log('Setting badge thread count:', threadCount);
-    await chrome.action.setBadgeText({
-      text: threadCount > 9 ? '9+' : threadCount.toString(),
-      tabId,
-    });
-    await chrome.action.setBadgeBackgroundColor({
-      color: '#FF6E6E',
-      tabId,
-    });
-
   } catch (e) {
     console.error('Error in updateBadge', e);
     return;

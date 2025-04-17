@@ -723,5 +723,6 @@ $('document').ready(function(){
 		} else {
 			console.log('Response from content script:', response);
 		}
+		return true; // Keep the message channel open for responses
 	});
 });

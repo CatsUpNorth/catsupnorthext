@@ -1996,6 +1996,8 @@ class AppState {
 			if(trdCount < 1) continue; // no threads in this part, skip it.
 			const treeDiv 	= $(
 				`<div class="tree_part${(is_top? ' top_part': '')}" data-url="${key}">
+					<a href="${key}" class="tree_part_link" target="_blank">${showURL}</a>
+					<br>
 					&nbsp;
 					<a class="pull-right tree_part_opener" href="#">
 						<span class="tree_child_part_count"></span>
@@ -2006,7 +2008,6 @@ class AppState {
 							${this.heroicon('chevron-down')}
 						</span>
 					</a>
-					<a href="${key}" class="tree_part_link" target="_blank">${showURL}</a>
 				 </div>`
 			);
 			parentContainer.append(treeDiv); // append the tree div to the parent container
@@ -3411,19 +3412,25 @@ class AppState {
 		return this.state.invoices[selectedWalletID]?.crypto_currency || 'BTC';
 	}
 
-	genBuyForm(){
-        const buyForm 			= $(`<form></form>`);
+	genBuyForm(forceCryptoCode = null){
+		$('.invoice_buy_form').remove(); // remove any existing buy forms
+        const buyForm 			= $(`<form class="invoice_buy_form"></form>`);
 		const crytpoLabel 		= $('<label for="select-input">Crypto Currency:</label>');
-		const cryptoSelect 		= $(`
-			<select class="buy_wallet_crypto" name="select-input" required>
-				<option value="BTC">BTC</option>
-				<option value="XMR">XMR</option>
-			</select>
-		`);
-		cryptoSelect.on('change', function(event){ // reset form
-			event.preventDefault();
-			$('.buy_wallet_val').val('').trigger('keyup');
-		});
+		var cryptoSelect;
+		if(forceCryptoCode && typeof forceCryptoCode == 'string'){
+			cryptoSelect = $(`<input type="hidden" class="buy_wallet_crypto" name="select-input" value="${forceCryptoCode}" required>`);
+		}else{
+			cryptoSelect 		= $(`
+				<select class="buy_wallet_crypto" name="select-input" required>
+					<option value="BTC">BTC</option>
+					<option value="XMR">XMR</option>
+				</select>
+			`);
+			cryptoSelect.on('change', function(event){ // reset form
+				event.preventDefault();
+				$('.buy_wallet_val').val('').trigger('keyup');
+			});
+		}
 		const fiatLabel 		= $('<label for="select-input">Buy Value:</label>');
 		const fiatOptions 		= ['USD','CAD','EUR'];
 		const fiatSelect 		= $('<select class="buy_wallet_curr" name="select-input" required></select>');
@@ -3465,7 +3472,16 @@ class AppState {
 	
 	buildWalletForm(){
 		this.currentThreadID = null;
-        $('#nav-close').show(300);
+
+		$('#nav_dropdown').slideUp();
+		// Close link
+		const closeIcon = this.heroicon('x-mark') || '❌';
+		const closeLink = $(`<a href="#" id="close_wallet_list" class="pull-right faded" title="Close Wallet List" style="margin-top:10px;">${closeIcon}&nbsp;Close</a>`);
+		closeLink.on('click', (e) => {
+			e.preventDefault();
+			this.getThreads();
+		});
+		$('#gui').empty().append('&nbsp;',closeLink,'<br><br>');
 
 		// Create wallet form
 		const buyFormContainer 	= $('<div class="buy_form_container" style="display:none;"></div>');
@@ -3487,7 +3503,7 @@ class AppState {
 			$('.buy_form_container').toggle(200);
 		});
 		h2.append(plus);
-		$('#gui').empty().css({display:'block'}).addClass('wallet_list').append(h2,buyFormContainer);
+		$('#gui').append(h2,buyFormContainer);
 		
 		var total_invoices = 0, server_invoices = 0;
 		const date_sorted_invoice_keys = Object.keys(this.state.invoices).sort((a, b) => {
@@ -3546,7 +3562,7 @@ class AppState {
 				});
 			}
 
-			const redeemLink = $(`<a href="#" data-captcha-id="${name}" class="invoice_redeem_link" title="Redeem/Refresh this invoice">${this.heroicon('arrow-path')}&nbsp;Refresh</a>`);
+			const redeemLink = $(`<a href="#" data-captcha-id="${name}" class="invoice_redeem_link" title="Redeem/Refresh this invoice">${this.heroicon('arrow-path')}&nbsp;<span class="verb_span">Refresh</span></a>`);
 			redeemLink.click((e) => {
                 e.preventDefault();
                 try{
@@ -4024,7 +4040,7 @@ class AppState {
 							$('.wallet_delete_btn').first().trigger('click');
 						}
 					});
-					$('#wallet_check_options').empty().append('Are you sure you want to delete this wallet?<br><br><strong>This action cannot be undone.</strong><br><br>',confirm_txt,'<br><br>',confirm_btn,cancel_btn);
+					$('#wallet_check_options').empty().append('Are you sure you want to delete this wallet?<br><br><strong class="error">This action cannot be undone!!!</strong><br><br>',confirm_txt,'<br><br>',confirm_btn,cancel_btn);
 				});
 				$('#wallet_check_options').empty().append(dust_btn,delete_btn).slideDown(200);
 			}else if(check_count > 1){
@@ -4129,6 +4145,16 @@ class AppState {
 				});
 			}
 		});
+
+		// Refresh all balances button
+		const refreshAllBtn = $(`<button class="wallet_refresh_all_btn">Refresh All Wallet Balances</button>`);
+		refreshAllBtn.on('click', (e) => {
+			e.preventDefault();
+			$('.invoice_redeem_link').addClass('redeem_queue');
+			$('.invoice_redeem_link').prop('disabled', true).find('.verb_span').empty().append('Queued...');
+			this.redeemAll();
+		});
+		$('#gui').append('<br><br>',refreshAllBtn);
 
         // Invoice recovery form
         const recoveryForm = $(
@@ -4261,6 +4287,7 @@ class AppState {
 					invoice_group: 	data?.invoice_group || null,
 				});
 				this.saveState();
+				this.redeemAll(); // only runs if there are any queued invoices to redeem.
 			}
 		})
 		.catch(error => {
@@ -4269,9 +4296,23 @@ class AppState {
             this.buildWalletForm();
 		})
 		.finally(() => {
-			this.buildWalletForm();
+			// If we are not in the queue, rebuild the form.
 			this.loadWalletSelector();
 		});
+	}
+
+	redeemAll(){
+		const queuedRefreshLinks = $('.invoice_redeem_link.redeem_queue');
+		if(queuedRefreshLinks.length > 0){
+			const firstLink = queuedRefreshLinks.first();
+			firstLink.prop('disabled',false).removeClass('redeem_queue').addClass('batters_box');
+			setTimeout(function(){
+				$('.batters_box').trigger('click');
+				$('.batters_box').removeClass('batters_box');
+			},10000);
+			return true;
+		}
+		return false;
 	}
 
 	heroicon(name) {
