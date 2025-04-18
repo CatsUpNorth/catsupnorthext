@@ -1852,59 +1852,75 @@ class AppState {
 			$('.waiting_to_sort').removeClass('waiting_to_sort');
 			$('.thread_sorter').removeClass('active');
 			switch(threadSortMode){
-				case 'date_desc':
+				case 'date_desc': // thread id used as alternative to date_submitted
 					$('.thread').sort((a, b) => {
-						const aDate = $(a).attr('data-thread-id') || 0;
-						const bDate = $(b).attr('data-thread-id') || 0;
-						return (aDate < bDate)? 1: -1;
+						var aThreadID = $(a).attr('data-thread-id') || 0;
+						var bThreadID = $(b).attr('data-thread-id') || 0;
+							aThreadID = (aThreadID && !isNaN(aThreadID*1))? aThreadID*1: 0;
+							bThreadID = (bThreadID && !isNaN(bThreadID*1))? bThreadID*1: 0;
+						return (aThreadID < bThreadID)? 1: -1;
 					}).appendTo('#gui');
 					break;
 				case 'date_asc':
 					$('.thread').sort((a, b) => {
-						const aDate = $(a).attr('data-thread-id') || 0;
-						const bDate = $(b).attr('data-thread-id') || 0;
-						return (aDate < bDate)? -1: 1;
+						var aThreadID = $(a).attr('data-thread-id') || 0;
+						var bThreadID = $(b).attr('data-thread-id') || 0;
+							aThreadID = (aThreadID && !isNaN(aThreadID*1))? aThreadID*1: 0;
+							bThreadID = (bThreadID && !isNaN(bThreadID*1))? bThreadID*1: 0;
+						return (aThreadID < bThreadID)? -1: 1;
 					}).appendTo('#gui');
 					break;
 				case 'likes_desc':
 					$('.thread').sort((a, b) => {
-						const aLikes = $(a).attr('data-like-count') || 0;
-						const bLikes = $(b).attr('data-like-count') || 0;
+						var aLikes = $(a).attr('data-like-count') || 0;
+						var bLikes = $(b).attr('data-like-count') || 0;
+							aLikes = (aLikes && !isNaN(aLikes*1))? aLikes*1: 0;
+							bLikes = (bLikes && !isNaN(bLikes*1))? bLikes*1: 0;
 						return (aLikes < bLikes)? 1: -1;
 					}).appendTo('#gui');
 					break;
 				case 'likes_asc':
 					$('.thread').sort((a, b) => {
-						const aLikes = $(a).attr('data-like-count') || 0;
-						const bLikes = $(b).attr('data-like-count') || 0;
+						var aLikes = $(a).attr('data-like-count') || 0;
+						var bLikes = $(b).attr('data-like-count') || 0;
+							aLikes = (aLikes && !isNaN(aLikes*1))? aLikes*1: 0;
+							bLikes = (bLikes && !isNaN(bLikes*1))? bLikes*1: 0;
 						return (aLikes < bLikes)? -1: 1;
 					}).appendTo('#gui');
 					break;
 				case 'dislikes_desc':
 					$('.thread').sort((a, b) => {
-						const aDislikes = $(a).attr('data-dislike-count') || 0;
-						const bDislikes = $(b).attr('data-dislike-count') || 0;
+						var aDislikes = $(a).attr('data-dislike-count') || 0;
+						var bDislikes = $(b).attr('data-dislike-count') || 0;
+							aDislikes = (aDislikes && !isNaN(aDislikes*1))? aDislikes*1: 0;
+							bDislikes = (bDislikes && !isNaN(bDislikes*1))? bDislikes*1: 0;
 						return (aDislikes < bDislikes)? 1: -1;
 					}).appendTo('#gui');
 					break;
 				case 'dislikes_asc':
 					$('.thread').sort((a, b) => {
-						const aDislikes = $(a).attr('data-dislike-count') || 0;
-						const bDislikes = $(b).attr('data-dislike-count') || 0;
+						var aDislikes = $(a).attr('data-dislike-count') || 0;
+						var bDislikes = $(b).attr('data-dislike-count') || 0;
+							aDislikes = (aDislikes && !isNaN(aDislikes*1))? aDislikes*1: 0;
+							bDislikes = (bDislikes && !isNaN(bDislikes*1))? bDislikes*1: 0;
 						return (aDislikes < bDislikes)? -1: 1;
 					}).appendTo('#gui');
 					break;
 				case 'chats_desc':
 					$('.thread').sort((a, b) => {
-						const aChats = $(a).attr('data-chat-count') || 0;
-						const bChats = $(b).attr('data-chat-count') || 0;
+						var aChats = $(a).attr('data-chat-count') || 0;
+						var bChats = $(b).attr('data-chat-count') || 0;
+							aChats = (aChats && !isNaN(aChats*1))? aChats*1: 0;
+							bChats = (bChats && !isNaN(bChats*1))? bChats*1: 0;
 						return (aChats < bChats)? 1: -1;
 					}).appendTo('#gui');
 					break;
 				case 'chats_asc':
 					$('.thread').sort((a, b) => {
-						const aChats = $(a).attr('data-chat-count') || 0;
-						const bChats = $(b).attr('data-chat-count') || 0;
+						var aChats = $(a).attr('data-chat-count') || 0;
+						var bChats = $(b).attr('data-chat-count') || 0;
+							aChats = (aChats && !isNaN(aChats*1))? aChats*1: 0;
+							bChats = (bChats && !isNaN(bChats*1))? bChats*1: 0;
 						return (aChats < bChats)? -1: 1;
 					}).appendTo('#gui');
 					break;
