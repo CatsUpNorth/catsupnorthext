@@ -198,6 +198,32 @@ input[type="submit"], .wallet_refresh_all_btn {
   border: 1px solid light-dark(var(--lm-faint-border), var(--dm-faint-border));
   background-color: light-dark(var(--lm-bg), var(--dm-bg));
 }
+.thread_sorter_container{
+  display: block;
+  text-align: center;
+  margin-top: 10px;
+  margin-left: 0;
+  margin-right: 0;
+  margin-bottom: 5px;
+  padding: 0;
+  opacity: 0.8;
+  width:100%;
+}
+.thread_sorter_container:hover{
+  opacity: 1;
+}
+.thread_sorter{
+  /* links */
+  color: light-dark(var(--lm-faded-txt), var(--dm-faded-txt));
+  font-size: 0.8em;
+  display: inline;
+}
+.thread_sorter.active{
+  color: light-dark(var(--lm-link), var(--dm-link));
+}
+.thread.waiting_to_sort{ /* Waiting on js, not server */
+  opacity:0.1 !important;
+}
 .thread.my_thread {
   border: 1px solid light-dark(var(--lm-my-content), var(--dm-my-content));
 }

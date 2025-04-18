@@ -1257,9 +1257,9 @@ class AppState {
 		return repo_split[0]*1;
 	}
 
-	updateReactions(reactions){
+	updateReactions(reactions){ // Array required
 		this.addBlurFunctionality();
-		if(!reactions || !Array.isArray(reactions)) return;
+		reactions = Array.isArray(reactions)? reactions: [];
 		const walletId = this.getCurrentWalletId();
 		var like_counts = {};
 		for (var i=0; i<reactions.length; i++){ // label my reactions
@@ -1288,6 +1288,7 @@ class AppState {
 			}
 		}
 
+		// Update the like counts and my_reaction classes
 		for(var key in like_counts){
 			const o 			= like_counts[key];
 			const like_btn 		= $(`.like_button[data-chat-id="${o.id}"]`);
@@ -1364,12 +1365,37 @@ class AppState {
 						this.feed(data.error, true);
 					} else {
 						this.feed(data.msg);
+						this.rollupReactions();
 					}
 				})
 				.catch(error => {
 					this.feed('There has been a problem with your fetch operation. See console.', true);
 					console.error(error);
 				});
+			});
+		}
+
+		// need to update data-chat-count, data-like-count, and data-dislike-count for thread sorting.
+		this.rollupReactions();
+	}
+
+	rollupReactions(){ // rollup reactions to the thread container
+		if($('.thread').length > 0){
+			$('.thread').each((index) => {
+				try{
+					const element		= $('.thread').eq(index);
+					var chat_count 		= element.find('.chat_reply_count').first().text() || 0;
+						chat_count		= (chat_count && !isNaN(chat_count*1))? chat_count*1: 0;
+					var likes_count		= element.find('.like_count').first().text() || 0;
+						likes_count		= (likes_count && !isNaN(likes_count*1))? likes_count*1: 0;
+					var dislikes_count	= element.find('.dislike_count').first().text() || 0;
+						dislikes_count	= (dislikes_count && !isNaN(dislikes_count*1))? dislikes_count*1: 0;
+					element.attr('data-chat-count', chat_count);
+					element.attr('data-like-count', likes_count);
+					element.attr('data-dislike-count', dislikes_count);
+				}catch(e){
+					console.error(e);
+				}
 			});
 		}
 	}
@@ -1777,9 +1803,121 @@ class AppState {
 				$('#ext_search').attr('placeholder', `Search ${chatCount} Chat${(chatCount == 1 ? '' : 's')}...`);
 			});
 	}
+
+	loadThreadSorters(){
+		try{
+			const threadSortMode 		= this.state.threadSortMode? this.state.threadSortMode + '': 'date_desc'; // i.e. date_desc, likes_asc, etc.
+			const divSorterContainer 	= $('.thread_sorter_container');
+			divSorterContainer.empty();
+			const sortUpIcon 		= this.heroicon('chevron-up') || '⬆️';
+			const sortDownIcon 		= this.heroicon('chevron-down') || '⬇️';
+			const upDownIcon		= this.heroicon('chevron-up-down') || '-';
+			var dateSorterIcon		= threadSortMode == 'date_desc'? sortDownIcon: upDownIcon;
+				dateSorterIcon		= threadSortMode == 'date_asc'? sortUpIcon: dateSorterIcon;
+			var likesSorterIcon		= threadSortMode == 'likes_desc'? sortDownIcon: upDownIcon;
+				likesSorterIcon		= threadSortMode == 'likes_asc'? sortUpIcon: likesSorterIcon;
+			var chatsSorterIcon		= threadSortMode == 'chats_desc'? sortDownIcon: upDownIcon;
+				chatsSorterIcon		= threadSortMode == 'chats_asc'? sortUpIcon: chatsSorterIcon;
+			var dislikesSorterIcon	= threadSortMode == 'dislikes_desc'? sortDownIcon: upDownIcon;
+				dislikesSorterIcon	= threadSortMode == 'dislikes_asc'? sortUpIcon: dislikesSorterIcon;
+			const dateSorter 		= $(`<a href="#" class="thread_sorter${(threadSortMode.startsWith('date')? ` active`: ``)}" data-sort-mode="date"><span class="thread_sorter_icon">${dateSorterIcon}</span> Date</a>`);
+			const likesSorter 		= $(`<a href="#" class="thread_sorter${(threadSortMode.startsWith('likes')? ` active`: ``)}" data-sort-mode="likes"><span class="thread_sorter_icon">${likesSorterIcon}</span> Likes</a>`);
+			const dislikesSorter	= $(`<a href="#" class="thread_sorter${(threadSortMode.startsWith('dislikes')? ` active`: ``)}" data-sort-mode="dislikes"><span class="thread_sorter_icon">${dislikesSorterIcon}</span> Dislikes</a>`);
+			const chatsSorter 		= $(`<a href="#" class="thread_sorter${(threadSortMode.startsWith('chats')? ` active`: ``)}" data-sort-mode="chats"><span class="thread_sorter_icon">${chatsSorterIcon}</span> Chats</a>`);
+			divSorterContainer.append(dateSorter,'&nbsp;&nbsp;',chatsSorter,'&nbsp;&nbsp;',likesSorter,'&nbsp;&nbsp;',dislikesSorter);
+			$('.thread_sorter').off().on('click', (event) => {
+				event.preventDefault();
+				const target 		= $(event.currentTarget);
+				var newSortMode 	= $(event.currentTarget).attr('data-sort-mode'); // i.e. date, likes, or chats
+				const oldSortMode 	= this.state.threadSortMode? this.state.threadSortMode + '': 'date_desc'; // i.e. date_desc, likes_asc, etc.
+				if(!newSortMode || typeof newSortMode != 'string' || newSortMode.length < 1) return;
+				if(oldSortMode.startsWith(newSortMode)){
+					newSortMode = oldSortMode.endsWith('desc')? `${newSortMode}_asc`: `${newSortMode}_desc`;
+				}else{
+					newSortMode = `${newSortMode}_desc`;
+				}
+				this.state.threadSortMode = newSortMode + '';
+				this.saveState();
+				this.sortThreads();
+			});
+		}catch(e){
+			console.error(e);
+		}
+	}
+
+	sortThreads(){
+		try{
+			const threadSortMode = this.state.threadSortMode? this.state.threadSortMode + '': 'date_desc'; // i.e. date_desc, likes_asc, etc.
+			$('.waiting_to_sort').removeClass('waiting_to_sort');
+			$('.thread_sorter').removeClass('active');
+			switch(threadSortMode){
+				case 'date_desc':
+					$('.thread').sort((a, b) => {
+						const aDate = $(a).attr('data-thread-id') || 0;
+						const bDate = $(b).attr('data-thread-id') || 0;
+						return (aDate < bDate)? 1: -1;
+					}).appendTo('#gui');
+					break;
+				case 'date_asc':
+					$('.thread').sort((a, b) => {
+						const aDate = $(a).attr('data-thread-id') || 0;
+						const bDate = $(b).attr('data-thread-id') || 0;
+						return (aDate < bDate)? -1: 1;
+					}).appendTo('#gui');
+					break;
+				case 'likes_desc':
+					$('.thread').sort((a, b) => {
+						const aLikes = $(a).attr('data-like-count') || 0;
+						const bLikes = $(b).attr('data-like-count') || 0;
+						return (aLikes < bLikes)? 1: -1;
+					}).appendTo('#gui');
+					break;
+				case 'likes_asc':
+					$('.thread').sort((a, b) => {
+						const aLikes = $(a).attr('data-like-count') || 0;
+						const bLikes = $(b).attr('data-like-count') || 0;
+						return (aLikes < bLikes)? -1: 1;
+					}).appendTo('#gui');
+					break;
+				case 'dislikes_desc':
+					$('.thread').sort((a, b) => {
+						const aDislikes = $(a).attr('data-dislike-count') || 0;
+						const bDislikes = $(b).attr('data-dislike-count') || 0;
+						return (aDislikes < bDislikes)? 1: -1;
+					}).appendTo('#gui');
+					break;
+				case 'dislikes_asc':
+					$('.thread').sort((a, b) => {
+						const aDislikes = $(a).attr('data-dislike-count') || 0;
+						const bDislikes = $(b).attr('data-dislike-count') || 0;
+						return (aDislikes < bDislikes)? -1: 1;
+					}).appendTo('#gui');
+					break;
+				case 'chats_desc':
+					$('.thread').sort((a, b) => {
+						const aChats = $(a).attr('data-chat-count') || 0;
+						const bChats = $(b).attr('data-chat-count') || 0;
+						return (aChats < bChats)? 1: -1;
+					}).appendTo('#gui');
+					break;
+				case 'chats_asc':
+					$('.thread').sort((a, b) => {
+						const aChats = $(a).attr('data-chat-count') || 0;
+						const bChats = $(b).attr('data-chat-count') || 0;
+						return (aChats < bChats)? -1: 1;
+					}).appendTo('#gui');
+					break;
+				default:;
+			}
+			setTimeout(()=>{
+				this.loadThreadSorters();
+			},100);
+		}catch(e){
+			console.error(e);
+		}
+	}
 	
 	getThreads(url_arg = null){
-		console.trace('getThreads() called', url_arg);
 		if(this.paused) return;
 		if(this.threadLocked){
 			this.waitingURL = url_arg;
@@ -1872,13 +2010,20 @@ class AppState {
 					$('#gui').append('<h1 style="opacity:0.7;padding:10px;font-weight:300;font-style:italic;"><br><br><img style="display:inline-block;height:1em;" src="images/icon-128.png">&nbsp;Be the first to create a thread on this page!</h1>');
 					return;
 				}
+
+				// thread sorting
+				const divSorterContainer = $('<div class="thread_sorter_container"></div>'); // top of gui
+				$('#gui').append(divSorterContainer);
+				this.loadThreadSorters(); // load the sorters
+
+				// rendering the threads
 				const server_url = this.getSetting('server_url');
 				const hide_free_threads = this.getSetting('hide_free_threads');
 				threads.forEach( thread => {
 					const isMe = thread?.is_me || false;
 					const isFree = thread?.is_free || false;
 					if(hide_free_threads && isFree) return; // Do not add free threads if setting is enabled
-					const threadDiv = $(`<div class="thread${(isFree? ' free_thread': '')}${(isMe? ' my_thread': '')}" data-chat-id="${thread.chat_id}" data-thread-id="${thread.thread_id}"><strong class="chat_info">${thread.thread_id}</strong>&nbsp;&nbsp;</div>`);
+					const threadDiv = $(`<div class="thread${(isFree? ' free_thread': '')}${(isMe? ' my_thread': '')} waiting_to_sort" data-chat-id="${thread.chat_id}" data-thread-id="${thread.thread_id}"><strong class="chat_info">${thread.thread_id}</strong>&nbsp;&nbsp;</div>`);
 					threadDiv.append(this.createFollowLink(thread.alias, isMe, isFree),'&nbsp;&nbsp;',this.createUserPageLink(thread.alias));
 					if(server_url && thread.alias && thread.alias.startsWith('$')){
 						const channelURL  = (thread.channel && typeof thread.channel == 'string')? `${server_url}/u/${thread.alias}/${thread.channel}`: '';
@@ -1917,6 +2062,7 @@ class AppState {
 					$(`.thread_opener[data-thread-id="${this.forwardedThreadID}"]`).trigger('click');
 					this.forwardedThreadID = null;
 				}
+				this.sortThreads(); // sort the threads based on the current sort mode.
 			})
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);

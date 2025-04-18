@@ -375,6 +375,16 @@ function revert_chat_input(){
 		addChatInputListeners();
 	}
 }
+
+function pingServiceWorker(){
+	// Send 'EXTENSION_LOADED' message to the content script
+	chrome.runtime.sendMessage({ type: 'EXTENSION_LOADED' }, (response) => {
+		if (chrome.runtime.lastError) {
+			console.error('Error sending message:', chrome.runtime.lastError);
+		}
+		return true; // Keep the message channel open for responses
+	});
+}
 	
 $('document').ready(function(){
 
@@ -386,6 +396,7 @@ $('document').ready(function(){
 		if(app) app.getThreads(); // turn off the chat polling.
 		$('.internal_nav').show();
 		$('#nav_dropdown').fadeToggle(200); 
+		pingServiceWorker();
 	});
 	$('#nav-buy').on('click', function(){ hideNavs(); app.buildWalletForm(); });
 	$('#nav-follows').on('click', function(){ hideNavs(); app.buildFollowList(); });
@@ -519,6 +530,7 @@ $('document').ready(function(){
 		app.setCurrentThreadID(null); // should stop the polling
 		app.getThreads();
 		$('#chat_input').val('').trigger('keyup');
+		pingServiceWorker();
 	});
 	$('#ext_search').on('keyup', function(){
 		const query = $(this).val().toString().toLowerCase();
@@ -661,9 +673,11 @@ $('document').ready(function(){
 					lastUrlLoaded = tab.url;
 					urlMetaData = null;
 					$('#chat_input').val('').trigger('keyup');
+					pingServiceWorker();
 				}
 			});
 		});
+
 		// Add a listener for sites that use pushState to change the URL without reloading the page.
 		chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
 			// app is loaded when page ready.
@@ -676,6 +690,7 @@ $('document').ready(function(){
 					lastUrlLoaded = tab.url;
 					urlMetaData = null;
 					$('#chat_input').val('').trigger('keyup');
+					pingServiceWorker();
 				}
 			});
 		});
@@ -693,6 +708,7 @@ $('document').ready(function(){
 				lastUrlLoaded = tab.url;
 				urlMetaData = null;
 				$('#chat_input').val('').trigger('keyup');
+				pingServiceWorker();
 			}
 		});
 	});
@@ -706,23 +722,17 @@ $('document').ready(function(){
 			lastUrlLoaded = tab.url;
 			urlMetaData = null;
 			$('#chat_input').val('').trigger('keyup');
+			pingServiceWorker();
 		}
 	});
+
+	// Listen for messages from the service worker
 	chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		if (request.type === 'PING') {
-			console.log("Received PING from service worker.");
 			sendResponse({ status: 'PONG' });
 		}
 		return true; // Keep the message channel open for responses
 	});
 
-	// Send 'EXTENSION_LOADED' message to the content script
-	chrome.runtime.sendMessage({ type: 'EXTENSION_LOADED' }, (response) => {
-		if (chrome.runtime.lastError) {
-			console.error('Error sending message:', chrome.runtime.lastError);
-		} else {
-			console.log('Response from content script:', response);
-		}
-		return true; // Keep the message channel open for responses
-	});
+	pingServiceWorker(); // ping the service worker to make sure it's alive.
 });
