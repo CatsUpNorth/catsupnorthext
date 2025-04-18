@@ -141,6 +141,7 @@ a.expand_content{
   padding-right: 5px;
   padding-bottom: 7px;
   overflow-y: scroll; /* Enable vertical scrolling */
+  /* tile background 'images/cartoon_cats_darkened.png' */
   background-color: light-dark(var(--lm-dark-bg), var(--dm-dark-bg));
 }
 

@@ -716,7 +716,7 @@ $('document').ready(function(){
 		// app is loaded when page ready.
 		if(!app) return; 
 		// return if tab not active
-		if(!tab.active) return; 
+		if(!tab.active) return;
 		if (tab && tab.url && tab.url != lastUrlLoaded){
 			app.getThreads(tab.url);
 			lastUrlLoaded = tab.url;

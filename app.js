@@ -373,7 +373,7 @@ class AppState {
 
 	// Load the state from chrome.storage.local
 	loadState() {
-		chrome.storage.local.get(['invoices', 'current_user_url', 'settings', 'currentCaptcha', 'bookmarks'], (result) => {
+		chrome.storage.local.get(['invoices', 'current_user_url', 'settings', 'currentCaptcha', 'bookmarks', 'threadSortMode'], (result) => {
 			if (chrome.runtime.lastError) {
 				console.error('Error loading state:', chrome.runtime.lastError);
 				return;
@@ -383,6 +383,7 @@ class AppState {
 			this.state.settings 		= result.settings 			|| {};
 			this.state.currentCaptcha 	= result.currentCaptcha 	|| null;
 			this.state.bookmarks 		= result.bookmarks 			|| {};
+			this.state.threadSortMode 	= result.threadSortMode 	|| 'date_desc'; // default to newest sort mode
 
 			if (Object.keys(this.state.settings).length < Object.keys(this.settingsDefault).length) {
 				this.state.settings = JSON.parse(JSON.stringify(this.settingsDefault));
