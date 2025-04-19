@@ -619,6 +619,13 @@ $('document').ready(function(){
 
 	addChatInputListeners();
 
+	// vertical scrolling causes horizontal scrolling on #recent_tips_container
+	$('#recent_tips_container').on('wheel', function(e) {
+		e.preventDefault();
+		const scrollAmount = e.originalEvent.deltaY * 2; // Use originalEvent for jQuery
+		this.scrollLeft += scrollAmount; // Use 'this' for clarity
+	});
+
 	// polling
 	try{
 		window.chatInterval = clearInterval(window.chatInterval);

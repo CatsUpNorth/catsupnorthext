@@ -50,15 +50,6 @@
 
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 100% 50%;
-  }
-}
-
 @font-face {
   font-family: 'Josefin_Sans';
   src: url(Josefin_Sans/JosefinSans-Medium.tff) format('tff');
@@ -143,6 +134,69 @@ a.expand_content{
   overflow-y: scroll; /* Enable vertical scrolling */
   /* tile background 'images/cartoon_cats_darkened.png' */
   background-color: light-dark(var(--lm-dark-bg), var(--dm-dark-bg));
+}
+
+#recent_tips_container{
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto; /* Enable horizontal scrolling */
+  overflow-y: hidden; /* Hide vertical overflow */
+  white-space: nowrap;
+  scroll-behavior: smooth;
+  margin: 0;
+  width: 100%;
+  min-height: 1.8em;
+  font-size: 0.8em;
+  color: light-dark(var(--lm-faded-txt), var(--dm-faded-txt));
+  border-bottom: 1px solid light-dark(var(--lm-faint-border), var(--dm-faint-border));
+  /* Hide scrollbar for cleaner look, optional */
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+.recent_tip{
+  display: inline-block;
+  flex: 0 0 auto; /* Prevent shrinking, use intrinsic width */
+  position: relative;
+  margin: 5px;
+  padding-left: 10px;
+  padding-right: 10px;
+  padding-top: 0.2em;
+  padding-bottom: 0.2em;
+  font-size: 1.5em;
+  width: auto;
+  border-radius: 10px;
+  vertical-align: middle;
+  text-align: center;
+  background-color:  light-dark(var(--lm-dark-bg), var(--dm-dark-bg));
+  color: light-dark(var(--lm-superchat), var(--dm-superchat));
+  font-weight: 600;
+  box-shadow: 0px 0px 5px light-dark(var(--lm-superchat), var(--dm-superchat));
+  overflow: hidden;
+  animation: shimmer 2s infinite linear;
+  cursor: pointer;
+  opacity: 0.8;
+  /* don't allow text selection */
+  user-select: none;
+  -webkit-user-select: none; /* Safari */
+}
+
+.recent_tip:hover{
+  opacity: 1;
+  animation: none; /* Stop animation on hover */
+}
+
+.recent_tip_alias{
+  font-size: 0.7em;
+  color: light-dark(var(--lm-faded-txt), var(--dm-faded-txt));
+  font-weight: 400;
+  vertical-align:super;
+}
+
+.recent_tip svg{
+  vertical-align: sub;
+  height:1.6em;
+  display:inline-block;
 }
 
 #chat_input{

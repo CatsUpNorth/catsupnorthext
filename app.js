@@ -1574,6 +1574,34 @@ class AppState {
 		}
 	}
 
+	renderRecentTips(){
+		$('#recent_tips_container').empty();
+		$('.superchat_amount').each((index, el) => {
+			try{
+				const chatId 	= $(el).attr('data-chat-id') || null;
+				const alias 	= $(el).attr('data-alias') || null;
+				const fiat_str 	= $(el).find('.fiat_str').text() || null;
+				const cc_icon 	= $(el).find('.cc_icon').first();
+				const recentTip = $(`<div class="recent_tip" data-chat-id=${chatId}></div>`);
+				recentTip.append(cc_icon.clone(), '&nbsp;', fiat_str, '<br>', `<span class="recent_tip_alias">${alias}</span>`);
+				recentTip.on('mouseup', (event) => {
+					// scroll to .chat in #gui with same chat id
+					event.preventDefault();
+					const target 		= $(event.currentTarget);
+					const chatId 		= target.attr('data-chat-id') || null;
+					const chatDiv 		= $(`.chat[data-id="${chatId}"]`);
+					if(chatDiv.length < 1) return; // chat not found
+					const scrollTo 		= chatDiv.offset().top - $('#gui').offset().top + $('#gui').scrollTop() - 20; // 20px padding
+					$('#gui').animate({ scrollTop: scrollTo}, 200);
+					target.animate({opacity: 0.3}, 50).animate({opacity: 0.8}, 50);
+				});
+				$('#recent_tips_container').prepend(recentTip);
+			}catch(e){
+				console.error(e);
+			}
+		});
+	}
+
 	loadThread(threadId = null, password = null, force_restart = false) {
 		$('#tree_count_container').css({ display: 'none' });
 		if (!threadId || isNaN(threadId * 1)) threadId = this.getCurrentThreadID();
@@ -1638,8 +1666,9 @@ class AppState {
 				}
 			})
 			.then(json => {
-				if (startMode) {
+				if (startMode) { // only empty #gui if booting up the thread.
 					$('#main_thread_chat').empty();
+					$('#recent_tips_container').empty();
 					$('#gui').empty();
 					this.loadWalletSelector();
 				}
@@ -1706,7 +1735,7 @@ class AppState {
 						const fiatStr = this.satoshiToFiatStr(amount, chat?.sender_crypto_type);
 						const cryptoStr = this.satoshiToCryptoStr(amount, chat?.sender_crypto_type);
 						const star = this.heroicon('star-solid') || '⭐';
-						superChatStr = `<div class="superchat_amount">${star}&nbsp;${star}&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;${fiatStr}&nbsp;&nbsp;${star}&nbsp;${star}&nbsp;${star}</div>`;
+						superChatStr = `<div class="superchat_amount" data-chat-id="${chat.chat_id}" data-alias="${chat.alias}">${star}&nbsp;${star}&nbsp;${star}&nbsp;&nbsp;${cryptoStr}&nbsp;&nbsp;<span class="fiat_str">${fiatStr}</span>&nbsp;&nbsp;${star}&nbsp;${star}&nbsp;${star}</div>`;
 					}
 					chatDivClasses = chatDivClasses.join(' ');
 					const chatDiv = $(
@@ -1787,6 +1816,8 @@ class AppState {
 	
 				$('#thread_id_indicator').empty().append(this.getCurrentThreadID());
 				$('#exit_thread_container').css({ display: 'block' });
+
+				this.renderRecentTips();
 			})
 			.catch(error => {
 				this.feed('There has been a problem with your fetch operation. See console.', true);
@@ -2034,8 +2065,9 @@ class AppState {
 				this.loadThreadSorters(); // load the sorters
 
 				// rendering the threads
-				const server_url = this.getSetting('server_url');
+				const server_url 		= this.getSetting('server_url');
 				const hide_free_threads = this.getSetting('hide_free_threads');
+				const bookmarkKeys		= Object.keys(this.state?.bookmarks || {});
 				threads.forEach( thread => {
 					const isMe = thread?.is_me || false;
 					const isFree = thread?.is_free || false;
@@ -2046,6 +2078,10 @@ class AppState {
 						const channelURL  = (thread.channel && typeof thread.channel == 'string')? `${server_url}/u/${thread.alias}/${thread.channel}`: '';
 						const channelLink = thread.channel? `<span class="chat_info pull-right">in&nbsp;<a href="${channelURL}" target="_blank">${thread.channel}</a></span>`: '';
 						threadDiv.append(channelLink);
+					}
+					if(bookmarkKeys.indexOf(thread.thread_id) > -1){
+						const bookmarkIcon = this.heroicon('bookmark-solid') || '🔖';
+						threadDiv.append(bookmarkIcon);
 					}
 					threadDiv.append('<br>');
 					
@@ -2628,7 +2664,9 @@ class AppState {
 	}
 
 	satoshiToCryptoStr(satoshi, crypto_code = 'BTC'){
-		return this.satoshiToCrypto(satoshi,crypto_code) + " " + this.cryptoSymbol(crypto_code);
+		var cryptoDecimal = this.satoshiToCrypto(satoshi,crypto_code);
+			cryptoDecimal = cryptoDecimal.toLocaleString(undefined, { minimumFractionDigits: 8, maximumFractionDigits: 8 });
+		return cryptoDecimal + " " + this.cryptoSymbol(crypto_code);
 	}
 
 	satoshiToFiatStr(satoshi, crypto_code = 'BTC'){
