@@ -416,10 +416,10 @@ $('document').ready(function(){
 		if(isScrolledToBottom){
 			app.clearNewMessages();
 			app.skipAutoScroll = false;
-			$('#scroll_to_bottom_link').slideUp(200);
+			$('#scroll_to_bottom_container').css({display:'none'});
 		}else{
 			app.skipAutoScroll = true;
-			$('#scroll_to_bottom_link').slideDown(200);
+			$('#scroll_to_bottom_container').css({display:'block'});
 		}
 	});
 	$('#scroll_to_bottom_link').on('click', event => {

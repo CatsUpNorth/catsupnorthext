@@ -1579,6 +1579,8 @@ class AppState {
 		$('.superchat_amount').each((index, el) => {
 			try{
 				const chatId 	= $(el).attr('data-chat-id') || null;
+				const parent	= $('.chat[data-id="' + chatId + '"]').not('.blurred').first();
+				if(parent.length < 1) return; // chat not found
 				const alias 	= $(el).attr('data-alias') || null;
 				const fiat_str 	= $(el).find('.fiat_str').text() || null;
 				const cc_icon 	= $(el).find('.cc_icon').first();
@@ -2068,6 +2070,7 @@ class AppState {
 				const server_url 		= this.getSetting('server_url');
 				const hide_free_threads = this.getSetting('hide_free_threads');
 				const bookmarkKeys		= Object.keys(this.state?.bookmarks || {});
+				const intBookmarkKeys	= bookmarkKeys.map((key) => parseInt(key)); // convert to integers
 				threads.forEach( thread => {
 					const isMe = thread?.is_me || false;
 					const isFree = thread?.is_free || false;
@@ -2079,9 +2082,10 @@ class AppState {
 						const channelLink = thread.channel? `<span class="chat_info pull-right">in&nbsp;<a href="${channelURL}" target="_blank">${thread.channel}</a></span>`: '';
 						threadDiv.append(channelLink);
 					}
-					if(bookmarkKeys.indexOf(thread.thread_id) > -1){
-						const bookmarkIcon = this.heroicon('bookmark-solid') || '🔖';
-						threadDiv.append(bookmarkIcon);
+					if(bookmarkKeys.indexOf(thread.thread_id) > -1 || intBookmarkKeys.indexOf(thread.thread_id) > -1){
+						const bookmarkIcon 	= this.heroicon('bookmark') || '🔖';
+						const iconSpan 		= $(`<span class="error">${bookmarkIcon}</span>`);
+						threadDiv.append('&nbsp;&nbsp;',iconSpan);
 					}
 					threadDiv.append('<br>');
 					
@@ -3767,6 +3771,8 @@ class AppState {
 			redeemLink.click((e) => {
                 e.preventDefault();
                 try{
+					const targ = $(e.currentTarget);
+					const captchaId = targ.attr('data-captcha-id');
                     // empty the invoice container and add wait message
                     const click_target_parent = e.target.parentElement;
                     // lock height of parent
@@ -3775,8 +3781,7 @@ class AppState {
                     click_target_parent.innerHTML = 'Please wait...';
     
                     // Get the captcha ID from the clicked element
-    
-                    this.redeemInvoice(e.target.getAttribute('data-captcha-id'));
+                    this.redeemInvoice(captchaId);
                 }catch(e){
                     this.feed(e,true);
                 }
@@ -3913,21 +3918,21 @@ class AppState {
 				});
 				const verificationForm = $(
 					`<form class="invoice_verification_form" data-captcha-id="${captchaId}" style="display:none;">
-						<strong style="font-size:1.4em;">Get a Username!</strong><br><br>
+						<strong style="font-size:1.4em;">Get a New Username!</strong><br><br>
 						<select name="update_old_chats">
 							<option value="Yes" selected>Update old chats and threads</option>
 							<option value="No">Apply new username to new chats and threads only</option>
 						</select><br><br>
-						<div style="display:none;" class="previous_verified_usernames_container" data-captcha-id="${name}">
-							Previous Usernames<br>
-							<select name="previous_verified_usernames" data-captcha-id="${name}"><option value="0">Loading...</option></select><br><br>
+						<div class="previous_verified_usernames_container" data-captcha-id="${name}">
+							Reuse Previous Verified Usernames: <strong class="no_prev_found error" style="display:none;">None Found</strong><strong>FREE!</strong><br>
+							<select name="previous_verified_usernames" class="previous_vu_select" data-captcha-id="${name}"><option value="0">Loading...</option></select><br><br>
 						</div>
-						<input type="text" name="username_submission" data-captcha-id="${name}" placeholder="New Username..." style="font-size:20px;"><br><br>
+						<input type="text" name="username_submission" class="username_submission_text" data-captcha-id="${name}" placeholder="New Username..." style="font-size:20px;"><br><br>
 						<select class="verification_type" name="verification_type" data-captcha-id="${name}">
 							<option value="nickname" selected>Free Nickname (no fee)</option>
 							<option value="verified">Verified Username (pay fee)</option>
 						</select><br><br>
-						<div class="name_fee_desc" data-captcha-id="${name}" style="display:none;"><strong>Fee:</strong> <span class="user_verification_fee">Loading...</span><br><br></div>
+						<div class="name_fee_desc" data-captcha-id="${name}" style="display:none;"><strong>Fee:</strong> <span class="user_verification_fee">Loading...</span><br><span style="font-style:italic;opacity:0.7;">*Unless reusing previous verified names.</span><br><br></div>
 						<input type="submit" value="Get New Username"><br><br>
 						<strong class="error">WARNING:</strong> Assigning a username will reduce your anonymity and may affect your privacy.
 					</form>`
@@ -3984,6 +3989,7 @@ class AppState {
 									invoice.alias = new_username;
 									this.skipFeed = true;
 									this.redeemInvoice(this.transactionCaptcha);
+									this.buildWalletForm();
 								}else{
 									this.feed('No invoice found for this captcha ID.', true);
 								}
@@ -4032,21 +4038,30 @@ class AppState {
 						return;
 					}
 					const captcha_id = data?.captcha_id || null;
-					const verified_names = data?.verified_names || [];
+					var verified_names = data?.verified_names || [];
+						verified_names = Array.isArray(verified_names)? verified_names: [];
 					if(captcha_id){
-						const select = verificationForm.find(`select[name="previous_verified_usernames"][data-captcha-id="${captcha_id}"]`).first();
+						const select = $(`.previous_vu_select`).first();
 						if(select.length > 0){
-							select.empty();
+							select.empty().append(`<option value="">-</option>`);
 							if(verified_names.length > 0){
 								verified_names.forEach((name) => {
 									select.append(`<option value="${name}">${name}</option>`);
 								});
-								$('.previous_verified_usernames_container').slideDown(200, () => {
-									select.on('change', (e) => {
-										const targ = $(e.target);
-										const captchaId = targ.attr('data-captcha-id');
-										$(`input[name="username_submission"][data-captcha-id="${captchaId}"]`).val(e.target.value.replace(/\$/g,'').replace(/_/g,' '));
-									});
+								select.on('change', (e) => {
+									const targ 		= $(e.target);
+									const value 	= targ.val();
+									if(value.length > 0){
+										$(`.username_submission_text`).val(e.target.value.replace(/\$/g,'').replace(/_/g,' '));
+										$('.verification_type').val('verified').trigger('change');
+									}else{
+										$(`.username_submission_text`).val('').focus(200);
+									}
+								});
+							}else{
+								$('.no_prev_found').fadeIn(300);
+								select.slideUp(200, () => {
+									select.remove();
 								});
 							}
 						}
@@ -4078,7 +4093,7 @@ class AppState {
 							const ccode 	= this.getSelectedWalletCryptoCode();
 							const stats 	= this.fiatToSatoshi(fee, ccode);
 							const fiatStr 	= this.satoshiToFiatStr(stats, ccode);
-							feeStr = `${fiatStr} (${stats} sats)`;
+							feeStr = `${fiatStr}|${stats} atomic`;
 						}
 						$('.user_verification_fee').empty().append(feeStr);
 					});
@@ -4446,7 +4461,7 @@ class AppState {
 		const redeemEndpoint = `${server_url}/redeem_invoice`;
 		const formData = new FormData();
 		formData.append('captcha_id', captchaId);
-		formData.append('secret', this.state.invoices[captchaId].secret);
+		formData.append('secret', this.state.invoices?.[captchaId]?.secret);
 
 		// Send the POST request to redeem the invoice
 		fetch(redeemEndpoint, {
@@ -4528,7 +4543,6 @@ class AppState {
 	scrollDown() {
 		this.newMessages = 0;
 		this.skipAutoScroll = false;
-		$('#scroll_to_bottom_container').slideUp(200);
 		setTimeout(() => {
 			$('#gui').animate({ scrollTop: $('#gui').prop('scrollHeight') }, 400);
 		}, 10);

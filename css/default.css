@@ -177,8 +177,6 @@ a.expand_content{
   cursor: pointer;
   opacity: 0.8;
   /* don't allow text selection */
-  user-select: none;
-  -webkit-user-select: none; /* Safari */
 }
 
 .recent_tip:hover{
@@ -622,4 +620,12 @@ hr{
   padding: 15px;
   background-color: light-dark(var(--lm-dark-bg), var(--dm-dark-bg));
   border: 1px solid light-dark(var(--lm-success), var(--dm-success));
+}
+
+
+
+/* USER SELECT NONE LIST */
+.thread, .chat, .recent_tip, .tree_part, .thread_sorter_container, .thread_sorter{
+  user-select: none;
+  -webkit-user-select: none; /* Safari */
 }
