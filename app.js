@@ -1968,6 +1968,9 @@ class AppState {
 	
 	getThreads(url_arg = null){
 		if(this.paused) return;
+		if($('.invoice').length > 0){ // When in wallet viewing mode, user may navigate to receipt or invoice, do not allow threads to load.
+			return;
+		}
 		if(this.threadLocked){
 			this.waitingURL = url_arg;
 			return;
@@ -3683,6 +3686,7 @@ class AppState {
 		const closeLink = $(`<a href="#" id="close_wallet_list" class="pull-right cancel" title="Close Wallet List">${closeIcon}&nbsp;Close</a>`);
 		closeLink.on('click', (e) => {
 			e.preventDefault();
+			$('#gui').empty();
 			this.getThreads();
 		});
 		$('#gui').empty().append('&nbsp;',closeLink,'<br><br>');
@@ -4201,10 +4205,25 @@ class AppState {
 						var date 			= deposit?.receivedDate || null; // DATE IS UNIX EPOCH TIME
 						var date_str 		= date? new Date(date*1000).toLocaleString(): '-';
 						const fiatStr 		= this.cryptoToFiatStr(value, crypto_code);
-						const depositPre 	= $(`<hr><h2>${fiatStr}</h3><span title="Amount Deposited.">Value</span>: ${value}<br><span title="On Chain Fee">OC fee</span>: ${fee}<br>Received: ${date_str}</h3>`);
+						const depositPre 	= $(
+							`<hr>
+							<h3 title="Amount Deposited.">${value} ${crypto_code}</h3>
+							<span title="Using current exchange rate">Current Fiat Value: ${fiatStr}</span><br>
+							<span title="On Chain Fee">OC fee</span>: ${fee}<br>Received: ${date_str}</span>`
+						);
 						depositsDiv.append(depositPre);
-
 					}
+
+					// Add a link to the invoice page to view the deposits on BTCPayServer
+					const invoiceURL = invoice?.link || null;
+					if(invoiceURL && typeof invoiceURL == 'string' && invoiceURL.startsWith('https://')){
+						const receiptURL  = invoiceURL + '/receipt';
+						const invoiceLink = $(`<a href="${invoiceURL}" target="_blank" class="invoice_link" title="View this invoice on BTCPayServer">${this.heroicon('arrow-top-right-on-square')}&nbsp;Invoice</a>`);
+						const receiptLink = $(`<a href="${receiptURL}" target="_blank" class="invoice_link pull-right" title="View this invoice on BTCPayServer">${this.heroicon('arrow-top-right-on-square')}&nbsp;Receipt</a>`);
+						depositsDiv.append('<hr>', invoiceLink, receiptLink);
+					}
+
+
 					depositsDiv.slideDown(200);
 				}
 			});

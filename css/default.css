@@ -628,6 +628,11 @@ hr{
   border: 1px solid light-dark(var(--lm-success), var(--dm-success));
 }
 
+.invoice_deposits_drawer img{
+  width: 100%;
+  height: auto;
+}
+
 /* USER SELECT NONE LIST */
 .thread, .chat, .recent_tip, .tree_part, .thread_sorter_container, .thread_sorter{
   user-select: none;
