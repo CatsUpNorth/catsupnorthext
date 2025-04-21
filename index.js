@@ -412,7 +412,7 @@ $('document').ready(function(){
 		app.buildNotificationsForm();
 	});
 	$('#gui').on('scroll', function(){
-		const isScrolledToBottom = $(this).scrollTop() + $(this).innerHeight() >= $(this)[0].scrollHeight - 10;
+		const isScrolledToBottom = $(this).scrollTop() + $(this).innerHeight() >= $(this)[0].scrollHeight - 2;
 		if(isScrolledToBottom){
 			app.clearNewMessages();
 			app.skipAutoScroll = false;
@@ -577,6 +577,10 @@ $('document').ready(function(){
 		$('#thread_locker').css({display:'inline-block'});
 		$('#thread_unlocker').css({display:'none'});
 		app.unlockThread();
+	});
+
+	$('#wallet_opener').on('click', function(){
+		app.redeemAll();
 	});
 
 	function updateBookmarkCount(){
