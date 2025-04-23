@@ -1,7 +1,8 @@
 /* App State */
 class AppState {
 	constructor() {
-		this.version			= '1.0.0';
+		this.version			= null;
+		this.versionURL			= 'https://github.com/CatsUpNorth/catsupnorthext';
 		this.paused 			= false;
 		this.convUpdatedAt		= null; // Last time conversion rates were updated in seconds from epoch
 		this.state				= {}; // store notifications until users mark read.
@@ -81,9 +82,17 @@ class AppState {
 		this.waitingURL			= null; // used to track real url if thread is locked
 		this.currentTree 		= {}; // site level thread map
 		this.treeVisibleNodes 	= []; // visible nodes in the tree based un current url.
+		this.crossPostCache		= []; // used to cache cross posts waiting for the parent to load
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
 		this.settingsSchema.server_url = 'string';
 		this.loadState();
+
+		try{
+			const manifest 	= chrome.runtime.getManifest();
+			this.version 	= manifest?.version;
+		}catch(e){
+			console.error(e);
+		}
 	}
 
 	startModMode(){ // manually called in the console to enable mod features
@@ -131,7 +140,7 @@ class AppState {
 		this.setCurrentThreadID(null); // should stop the polling
 		$('#exit_thread_container').slideUp(200);
 		const exitIcon = this.heroicon('x-mark') || '❌';
-		const exitLink = $(`<a href="#" class="exit_to_thread pull-right" id="exit_bookmark_list">${exitIcon} Close</a>`);
+		const exitLink = $(`<a href="#" class="cancel pull-right" id="exit_bookmark_list">${exitIcon} Close</a>`);
 		exitLink.on('click', (e) => {
 			e.preventDefault();
 			this.getThreads();
@@ -171,7 +180,7 @@ class AppState {
 			$('#gui').append(bookmarkContainer);
 		}
 
-		$('#ext_search').attr('placeholder','Search Bookmarks...');
+		$('#ext_search').attr('placeholder','Search Bookmarks...').focus();
 	}
 	
 	feed(arg, err = false, cloneBefore = null, replaceGUI = false){
@@ -307,7 +316,8 @@ class AppState {
 					const passForm = $(
 						`<form class="thread_pass_form" data-thread-id="${threadId}" style="display:none;">
 							<input type="hidden" name="thread_id" value="${threadId}">
-							<input type="password" name="password" placeholder="Thread Password"${cachedPassStr}>
+							<input type="password" class="thread_password" name="password" placeholder="Thread Password"${cachedPassStr}>
+							<br><br>
 							<input type="submit" value="Login to Thread ${threadId}">
 						</form>`
 					);
@@ -1197,6 +1207,19 @@ class AppState {
 		return container;
 	}
 
+	createCrossPostContainer(chat_id, reply_to_id){
+		const cont = $(`<div class="cross_post_container" data-chat-id="${chat_id}" data-reply-to-id="${reply_to_id}"></div>`);
+
+		// add cached cross posts in case they return from the server before the cross-posting chat.
+		for(var i=0; i<this.crossPostCache.length; i++){ // jquery elements
+			const crossPost = this.crossPostCache[i];
+			const chatId 	= crossPost.attr('data-id') || null;
+			console.log(chatId, typeof crossPost, crossPost.length);
+			if(chatId == reply_to_id) cont.append(crossPost);
+		}
+		return cont;
+	}
+
 	createFollowLink(alias, is_me = false, is_free = false){
 		var link, alias_str = (alias && typeof alias == 'string')? alias: '';
 		if(is_me){
@@ -1492,7 +1515,7 @@ class AppState {
 	}
 
 	addBlurLink(container){
-		const chat_id 	= $(container).attr('data-id');
+		const chat_id = $(container).attr('data-id');
 		if(!chat_id || isNaN(chat_id*1)) return;
 		$(container).find('.blur_link').remove();
 		const blur_link = $(`<a href="#" class="blur_link" data-chat-id="${chat_id}" title="Blur this item." style="padding-left:15px;"></a>`);
@@ -1564,13 +1587,17 @@ class AppState {
 	}
 
 	addBlurFunctionality(){
-		const threads 	= this.modMode? $('.thread'): null;
-		const chats 	= this.modMode? $('.chat').add('.original_chat'): $('.is_reply_to_me');
+		const threads 		= this.modMode? $('.thread'): null;
+		const chats			= this.modMode? $('.chat').add('.original_chat'): $('.is_reply_to_me');
+		const trd_replies	= $('.original_chat').hasClass('.my_chat')? $('#gui > .chat'): null;
 		if(threads && threads.length > 0){
 			threads.each((index, thread) => { this.addBlurLink(thread); });
 		}
 		if(chats && chats.length > 0){
 			chats.each((index, chat) => { this.addBlurLink(chat); });
+		}
+		if(trd_replies && trd_replies.length > 0){
+			trd_replies.each((index, chat) => { this.addBlurLink(chat); });
 		}
 	}
 
@@ -1609,6 +1636,7 @@ class AppState {
 		if (!threadId || isNaN(threadId * 1)) threadId = this.getCurrentThreadID();
 		if (this.paused || !threadId) return;
 		this.midRequest = true;
+		this.crossPostCache = []; // clear cross post cache
 
 		const bookmarks = this.state?.bookmarks || {};
 		if (bookmarks && threadId in bookmarks) {
@@ -1703,10 +1731,11 @@ class AppState {
 	
 				threadChats.forEach(chat => {
 					const isMe = chat?.is_me || false;
-					const isFree = chat?.is_free || false;
 					const isTop = (!chat.reply_to_id && chat.thread_id == threadId) ? true : false;
+					const isFree = chat?.is_free || false;
 					const isSuper = (chat.superchat && !isNaN(chat.superchat * 1) && chat.superchat > 0) ? true : false;
 					const isBlurred = (chat.blurred && chat.blurred == 1) ? true : false;
+					const isCrossPost = chat.thread_id == threadId? false: true;
 	
 					if (hide_free_chats && isFree) return; // Do not add free chats if setting is enabled
 	
@@ -1721,7 +1750,7 @@ class AppState {
 					var chatDivClasses = [],
 						superChatStr = '';
 					if (isFree) chatDivClasses.push('free_chat');
-					if (isMe) chatDivClasses.push('my_chat');
+					if (isMe) 	chatDivClasses.push('my_chat');
 					if (isTop) {
 						chatDivClasses.push('original_chat');
 					} else {
@@ -1744,14 +1773,18 @@ class AppState {
 						 	${superChatStr}
 						</div>`
 					);
-					chatDiv.append(this.createFollowLink(chat.alias, isMe, isFree), '&nbsp;&nbsp;', this.createUserPageLink(chat.alias), '&nbsp;&nbsp;', this.contentPreview(chat.chat_content, chat.chat_id));
-					chatDiv.append(this.reactDiv(chat.chat_id, chat.date_submitted, chat?.sender_crypto_wallets));
+
 					// check if cross post
-					if (chat.thread_id != threadId) {
+
+					chatDiv.append(this.createFollowLink(chat.alias, isMe, isFree), '&nbsp;&nbsp;', this.createUserPageLink(chat.alias), '&nbsp;&nbsp;', this.contentPreview(chat.chat_content, chat.chat_id));
+					if(!isCrossPost){
+						chatDiv.append(this.createCrossPostContainer(chat.chat_id, chat?.reply_to_id));
+						chatDiv.append(this.reactDiv(chat.chat_id, chat.date_submitted, chat?.sender_crypto_wallets, null));
+					}else{ // cross post
 						const shortURL = chat.url.length < 30 ? chat.url : chat.url.substring(0, 30) + '...';
 						chatDiv.addClass('cross_post').removeClass('my_chat').removeClass('superchat').prepend(
 							`<br>
-							 <a href="${chat.url}" title="${chat.url}" class="cross_post_ext_link">${shortURL}</a>
+							 <a href="${chat.url}" title="${chat.url}" class="cross_post_ext_link" target="_blank">${shortURL}</a>
 							 <br>
 							 <span class="xpost_info">X-Post from thread ${chat.thread_id}</span>
 							 <br>`
@@ -1762,10 +1795,17 @@ class AppState {
 					if (chat.reply_to_id == 0 && chat.thread_id == threadId) { // top chat
 						chatDiv.find('.reply_link').remove();
 						$('#main_thread_chat').append(chatDiv);
-					} else { // regular chat
+					} else if (isCrossPost) { // regular chat
+						const crossPostParent = $('.cross_post_container[data-reply-to-id="' + chat.chat_id + '"]');
+						if(crossPostParent.length > 0){
+							crossPostParent.append(chatDiv);
+						}else{
+							this.crossPostCache.push(chatDiv); // wait until parent loads (rendered by this.createCrossPostContainer method)
+						}
+					} else {
 						const myReplyContainer = $(`<div class="reply_container" data-chat-id="${chat.chat_id}"></div>`);
 						chatDiv.append(myReplyContainer); // MY reply container, add replies to me here.
-						const parentReplyContainer = $(`.reply_container[data-chat-id="${chat.reply_to_id}"]`); // THEIR reply container
+						const parentReplyContainer = $(`.reply_container[data-chat-id="${chat.reply_to_id}"]`).not('.cross_post'); // THEIR reply container
 						const myChildren = $(`.chat[data-reply-to-id="${chat.chat_id}"]`);
 						if (parentReplyContainer.length > 0) { // put me in my parent's container
 							chatDiv.css({ paddingRight: '0' });
@@ -2176,7 +2216,7 @@ class AppState {
 		if(!parentContainer){
 			parentContainer = $('#gui'); // jquery object expected.
 			const exitIcon = this.heroicon('x-mark') || '❌';
-			const exitLink = $(`<a href="#" class="exit_to_thread pull-right" id="exit_site_tree">${exitIcon} Close</a>`);
+			const exitLink = $(`<a href="#" class="cancel pull-right" id="exit_site_tree">${exitIcon} Close</a>`);
 			exitLink.on('click', (e) => {
 				e.preventDefault();
 				this.getThreads();
@@ -2281,7 +2321,7 @@ class AppState {
 		setTimeout(function(){
 			const treePartCount = $('.tree_part').length;
 			const treeThreadCount = $('.tree_thread').length;
-			$('#ext_search').attr('placeholder', `Search ${treePartCount} URL${(treePartCount == 1 ? '' : 's')} or ${treeThreadCount} thread${(treeThreadCount == 1 ? '' : 's')}...`);
+			$('#ext_search').attr('placeholder', `Search ${treePartCount} URL${(treePartCount == 1 ? '' : 's')} or ${treeThreadCount} thread${(treeThreadCount == 1 ? '' : 's')}...`).focus();
 		},100);
 	}
 
@@ -2931,14 +2971,15 @@ class AppState {
 			var alias 		= o.name? `<span class="chat_info">${o.name}</span>`: '';
 			if(o.name && o.name.startsWith('$')){
 				alias = `<span class="chat_info"><a href="${server_url}/u/${o.name}" target="_blank">${o.name}</a></span>`;
-				channel = o.channel? `<span class="chat_info pull-right">in&nbsp;<a href="${server_url}/u/${o.name}/${o.channel}">${o.channel}</a></span>`: '';
+				channel = o.channel? `<span class="chat_info">in&nbsp;<a href="${server_url}/u/${o.name}/${o.channel}">${o.channel}</a></span>`: '';
 			}
 			const xMark = this.heroicon('x-mark') || '❌';
-			target_jquery_object.append(`<div class="notification-${typ}" data-chat-id="${o.id}" style="border-top:1px solid rgba(125,125,125,0.4);">
+			target_jquery_object.append(`<div class="notification notification-${typ}" data-chat-id="${o.id}" style="border-top:1px solid rgba(125,125,125,0.4);">
 				<a href="${server_url}/chat_forwarding?cid=${o.id}" title="${o.url}" target="_blank">${short_url}</a><br>
 				${o.content}<br>
 				${alias}${channel}
-				<a href="#" style="opacity:0.7;font-style:italic;font-size:0.7em;" class="pull-right error mark_notif_read" data-id="${o.id}" data-type="${typ}">${xMark} mark as read</a>
+				<br>
+				&nbsp;<a href="#" style="opacity:0.7;font-style:italic;font-size:0.7em;" class="pull-right error mark_notif_read" data-id="${o.id}" data-type="${typ}">${xMark} mark as read</a>
 			</div>`);
 		}catch(e){
 			console.error(e);
@@ -2946,21 +2987,29 @@ class AppState {
 	}
 
 	buildNotificationsForm() {
+		this.currentThreadID = null;
+		$('#nav_dropdown').slideUp();
+		$('#gui').empty();
 		const captcha_id 	= this.getSelectedWalletID();
 		if(!captcha_id || !(captcha_id in this.state.invoices)) return; // User may not have selected a wallet yet.
 		const invoice 		= this.state.invoices?.[captcha_id] || null;
 		if(!invoice || typeof invoice != 'object') return;
-		$('#new_replies_div').add('#new_threads_div').add('#notif_replies_link').add('#notif_threads_link').empty();
-		$('#nav_dropdown').css('display','block');
-		$('.internal_nav').css('display','none');
-		$('#form_container').empty().show();
-		$('#nav-close').show();
+		$('#new_replies_div').add('#new_threads_div').add('#notif_replies_link').add('#notif_threads_link').remove();
 		const repliesCount	= invoice.newReplies.length;
 		const threadsCount	= invoice.newThreads.length;
 		const notifCount 	= repliesCount + threadsCount;
+
+		const cancelIcon = this.heroicon('x-mark') || '❌';
+		const cancelButton = $(`<a href="#" id="cancel_notifications" class="cancel pull-right faded" title="Cancel Notifications">${cancelIcon}&nbsp;Close</a>`);
+		cancelButton.on('click', (e) => {
+			e.preventDefault();
+			this.getThreads();
+		});
+		$('#gui').append('&nbsp;',cancelButton);
+
+
 		if(notifCount < 1){
-			$('#form_container').append('<h2>No New Notifications</h2>');
-			$('#form_container').show();
+			$('#gui').append('<h2>No New Notifications</h2>');
 			return;
 		}
 		const newThreadsDiv = $(`<div id="new_threads_div" style="display:none;"></div>`);
@@ -3005,8 +3054,8 @@ class AppState {
 		}
 		actualNotifsCount = actualRepliesCount + actualThreadsCount;
 		const bell_icon = this.heroicon('bell') || '🔔';
-		$('#form_container').append(`<h2>${bell_icon} ${actualNotifsCount} Notification${( actualNotifsCount == 1? '': 's' )}</h2>`);
-		$('#form_container').append(threadsLink,'&nbsp;&nbsp;|&nbsp;&nbsp;',repliesLink,'<br><br>',newRepliesDiv,newThreadsDiv);
+		$('#gui').append(`<h2>${bell_icon} ${actualNotifsCount} Notification${( actualNotifsCount == 1? '': 's' )}</h2>`);
+		$('#gui').append(threadsLink,'&nbsp;&nbsp;|&nbsp;&nbsp;',repliesLink,'<br><br>',newRepliesDiv,newThreadsDiv);
 		$('#notif_threads_link_count').empty().append(actualThreadsCount);
 		$('#notif_replies_link_count').empty().append(actualRepliesCount);
 		if(this.state.notifsMode == 'threads'){
@@ -3043,6 +3092,7 @@ class AppState {
 			this.buildNotificationsForm();
 		});
 		this.updateNotifCount(captcha_id);
+		$('#ext_search').attr('placeholder','Search notifications...').focus();
 	}
 
 	buildChannelList(){
@@ -3503,7 +3553,7 @@ class AppState {
 				const channels = data?.channels || [];
 				const channelSelector = $('#create_thread_channel_selector');
 				if(channels.length > 0){
-					channelSelector.empty().append('<option>Select Channel (optional)</option>');
+					channelSelector.empty().append('<option value="">Select Channel (optional)</option>');
 					channels.forEach((channel) => {
 						if(!channel || typeof channel != 'object' || !channel.channel || typeof channel.channel != 'string') return;
 						channelSelector.append(`<option value="${channel.channel}">${channel.channel}</option>`);
@@ -4431,7 +4481,7 @@ class AppState {
             this.recoverInvoice(e.currentTarget);
         });
         $('#gui').append('<br><br><hr><h2>Recover a Wallet',recoveryForm);
-		$('#ext_search').attr('placeholder','Search Wallets...');
+		$('#ext_search').attr('placeholder','Search Wallets...').focus();
 	}
 
 	dustInvoice(out_captcha, in_captcha){

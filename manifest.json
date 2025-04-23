@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
+  "version": "1.0.0",
   "name": "CatsUpNorthExt",
-  "version": "1.0",
   "description": "CatsUpNorth Web externally_connectable",
   "icons": {
     "16": "images/icon-16.png",

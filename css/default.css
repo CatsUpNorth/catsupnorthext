@@ -224,7 +224,7 @@ form {
 label {
   opacity:0.7;
 }
-textarea, input[type="number"], input[type="text"], select {
+textarea, input[type="number"], input[type="text"], select, input[type="password"] {
   background-color: light-dark(var(--lm-faint-bg), var(--dm-faint-bg));
   border: 1px solid light-dark(var(--lm-faint-border), var(--dm-faint-border));
   border-radius: 5px;
@@ -377,6 +377,10 @@ input[type="submit"], .wallet_refresh_all_btn {
 .superchat_ephemeral svg, .superchat_amount svg{
   color: light-dark(var(--lm-superchat), var(--dm-superchat)) !important;
 }
+.cross_post_container{
+  margin:0;
+  padding:0;
+}
 hr{
   border-color: light-dark(var(--lm-faint-border), var(--dm-faint-border));
 }
@@ -418,10 +422,6 @@ hr{
 }
 #exit_thread_container{
   border-bottom: light-dark(1px solid var(--lm-faint-border), 1px solid var(--dm-faint-border));
-}
-.exit_to_thread{
-  margin-top: 5px;
-  color: light-dark(var(--lm-faded-txt), var(--dm-faded-txt));
 }
 .search_hide{
   display:none;
@@ -483,6 +483,9 @@ hr{
   filter: blur(5px);
   /* disable clicks */
   pointer-events: none;
+  /* disable text selection */
+  user-select: none;
+  -webkit-user-select: none; /* Safari */
 }
 .blur_show {
   background-color: rgb(80,0,0);

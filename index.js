@@ -392,6 +392,8 @@ $('document').ready(function(){
 	app = new AppState();
 	app.applyFontSizeSetting();
 	$('#version_str').text(app.version);
+	$('#nav-version').attr('href', app.versionURL);
+	$('#nav-version').attr('target','_blank');
 	$('#nav_opener').on('click', function(){ 
 		if(app) app.getThreads(); // turn off the chat polling.
 		$('.internal_nav').show();
@@ -520,6 +522,8 @@ $('document').ready(function(){
 		$('#spend_container').slideUp(200,function(){
 			$('#spend_input').val('').trigger('keyup');
 		});
+
+		$('.chat_opts_container').css({display:'none'});
 	});
 	$('#scroll_to_bottom_link').click(event => {
 		event.preventDefault();
@@ -539,7 +543,7 @@ $('document').ready(function(){
 			$('.search_show').removeClass('search_show');
 			return;
 		}
-		$('.chat').add('.thread').add('.tree_part').add('.tree_thread').add('.bookmark_container').add('.invoice').each(function(){
+		$('.chat').add('.thread').add('.tree_part').add('.tree_thread').add('.bookmark_container').add('.invoice').add('.notification').each(function(){
 			const chat_text = $(this).text().toLowerCase();
 			if(chat_text.includes(query)){
 				$(this).removeClass('search_hide');
