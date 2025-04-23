@@ -398,8 +398,8 @@ hr{
 }
 #form_container {
   display: none;
-  max-height: 100vh;
-  min-height: 100vh;
+  max-height: 50vh;
+  min-height: 50vh;
   overflow-y: auto;
   background-color: light-dark(var(--lm-faint-bg), var(--dm-faint-bg));
   padding: 15px;
@@ -412,6 +412,9 @@ hr{
   font-size: 0.8em;
   color: light-dark(var(--lm-error), var(--dm-error));
   font-style: italic;
+}
+.follow_ul{
+  padding-left:5px;
 }
 .reaction_link_span, .follow_link{
   font-size: 0.8em; /* Needs to be same size as .chat_info and .time_info for alignment */

@@ -880,26 +880,24 @@ class AppState {
 			$('#form_container').append('<p><strong>ERROR:</strong> Server URL not set.</p>');
 			return;
 		}
-		$('#form_container').append(serverURL);
-		var followCount = 0;
+		$('#form_container').append('server: ' + serverURL);
 		for(let captchaId in this.state.invoices){
 			const invoice = this.state.invoices[captchaId];
-
-			// Skip invoices that don't have follows
-			if(!('follows' in invoice) || !invoice.follows || !Array.isArray(invoice.follows) || invoice.follows.length < 1) continue;
-
 			// skip invoices that are not on this server
 			if(invoice.server_url != serverURL) continue;
 
 			var captchaName = captchaId.substring(0, 8) + '...';
 			if('alias' in invoice && invoice.alias && typeof invoice.alias == 'string' && invoice.alias.length > 0) captchaName = invoice.alias;
-			const userFollows = invoice?.follows || [];
-			const followCount = userFollows.length;
-			$('#form_container').append(`<h4>${captchaName} follows ${followCount} user${( followCount == 1? '': 's' )}</h4>`);
-			if(followCount < 1) continue
+			$('#form_container').append(`<br><br><strong>${captchaName}</strong>`);
+			// Skip invoices that don't have follows
+			if(!('follows' in invoice) || !invoice.follows || !Array.isArray(invoice.follows) || invoice.follows.length < 1){
+				$('#form_container').append('<span class="chat-info error">&nbsp;&nbsp;No follows</span>');
+				continue;
+			};
+			$('#form_container').append(`<span class="chat-info">&nbsp;&nbsp;(${invoice.follows.length})</span>`);
 			const followList = $('<ul class="follow_ul"></ul>');
-			for(var i=0; i<followCount; i++){
-				const u = userFollows[i];
+			for(var i=0; i<invoice.follows.length; i++){
+				const u = invoice.follows[i];
 				const unfollow_link = $(`<a href="#" class="unfollow_link error" data-alt-captcha="${captchaId}" data-alias="${u}" title="Unfollow this user">${this.heroicon('user-minus')} Unfollow</a>`);
 				unfollow_link.on('click', (event) => {
 					const targ = $(event.currentTarget);
@@ -912,9 +910,6 @@ class AppState {
 				followList.append(li);
 			}
 			$('#form_container').append(followList);
-		}
-		if(followCount < 1){
-			$('#form_container').append('<p>No follows found.</p>');
 		}
 	}
 
