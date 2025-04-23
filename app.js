@@ -3721,6 +3721,59 @@ class AppState {
 		});
 		return buyForm;
 	}
+
+	getColorForNumber(num) {
+		num = isNaN(num*1)? 0: num*1;
+		// Seedable pseudo-random number generator for consistency
+		function mulberry32(seed) {
+			let t = seed += 0x6D2B79F5;
+			t = Math.imul(t ^ t >>> 15, t | 1);
+			t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+			return ((t ^ t >>> 14) >>> 0) / 4294967296;
+		}
+	
+		// Use number as seed for consistent output
+		const rand = mulberry32(num);
+	
+		// Generate hue with controlled variation
+		const hue = (rand * 360 + (num % 1000) * 0.36) % 360;
+	
+		// Convert HSL to RGB
+		function hslToRgb(h, s, l) {
+			h /= 360;
+			s /= 100;
+			l /= 100;
+			let r, g, b;
+	
+			if (s === 0) {
+				r = g = b = l;
+			} else {
+				const hue2rgb = (p, q, t) => {
+					if (t < 0) t += 1;
+					if (t > 1) t -= 1;
+					if (t < 1/6) return p + (q - p) * 6 * t;
+					if (t < 1/2) return q;
+					if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+					return p;
+				};
+				const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+				const p = 2 * l - q;
+				r = hue2rgb(p, q, h + 1/3);
+				g = hue2rgb(p, q, h);
+				b = hue2rgb(p, q, h - 1/3);
+			}
+	
+			return [
+				Math.round(r * 255),
+				Math.round(g * 255),
+				Math.round(b * 255)
+			];
+		}
+	
+		// Use HSL with medium lightness (50%) and high saturation (70%) for vibrant, medium-shade colors
+		const [r, g, b] = hslToRgb(hue, 70, 50);
+		return `rgb(${r},${g},${b})`;
+	}
 	
 	buildWalletForm(){
 		this.currentThreadID = null;
@@ -3786,7 +3839,7 @@ class AppState {
 			const crypto_code 	= invoice?.crypto_currency || null;
 			const crypto_symbol = this.cryptoSymbol(crypto_code);
 			const inv_group 	= invoice?.invoice_group || null;
-			const group_str 	= inv_group? `<span class="pull-right" style="font-weight:600;font-size:1.7em;opacity:0.4;" title="Invoice Group ID (Invoice groups allow you to accept multiple crypto currencies as tip chats).">g${inv_group}</span>`: '';
+			const group_str 	= inv_group? `<span class="pull-right" style="font-weight:600;font-size:1.7em;color:${this.getColorForNumber(inv_group)};" title="Invoice Group ID (Invoice groups allow you to accept multiple crypto currencies as tip chats).">g${inv_group}</span>`: '';
 			const alias 		= invoice?.alias || null;
 			const use_name      = alias? alias: name.substring(0, 8);
             const bal_class     = invoice.balance > 0? 'balance': 'no_balance';
@@ -4165,7 +4218,7 @@ class AppState {
 				});
 			});
 			var deposit_count = Array.isArray(invoice?.deposits)? invoice.deposits.length: 0;
-			const depositsLink = $(`<a href="#" class="invoice_deposits_link" data-captcha-id="${name}" title="View deposits for this wallet">Deposits (${deposit_count})&nbsp;${this.heroicon('chevron-down')}</a>`);
+			const depositsLink = $(`<a href="#" class="invoice_deposits_link" data-captcha-id="${name}" title="View deposits for this wallet">Deposit (${deposit_count})&nbsp;${this.heroicon('chevron-down')}</a>`);
 			depositsLink.on('click', (e) => {
 				e.preventDefault();
 				const targ = $(e.currentTarget);
