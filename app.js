@@ -180,7 +180,7 @@ class AppState {
 			$('#gui').append(bookmarkContainer);
 		}
 
-		$('#ext_search').attr('placeholder','Search Bookmarks...').focus();
+		$('#ext_search').attr('placeholder','Search bookmarks...').focus();
 	}
 	
 	feed(arg, err = false, cloneBefore = null, replaceGUI = false){
@@ -2704,9 +2704,10 @@ class AppState {
 		return this.fiatToSatoshi(fiat_amount,cryptp_code);
 	}
 
-	satoshiToCryptoStr(satoshi, crypto_code = 'BTC'){
+	satoshiToCryptoStr(satoshi, crypto_code = 'BTC', no_symbol = false){
 		var cryptoDecimal = this.satoshiToCrypto(satoshi,crypto_code);
 			cryptoDecimal = cryptoDecimal.toLocaleString(undefined, { minimumFractionDigits: 8, maximumFractionDigits: 8 });
+		if(no_symbol) return cryptoDecimal + " " + crypto_code;
 		return this.cryptoSymbol(crypto_code) + " " + cryptoDecimal;
 	}
 
@@ -3032,8 +3033,8 @@ class AppState {
 			$('#new_threads_div').hide();
 			$('#new_replies_div').show();
 		});
-		var ignoreIDs = invoice?.notifsIgnoreIDs || [];
-			ignoreIDs = Array.isArray(ignoreIDs)? ignoreIDs: [];
+		var ignoreIDs 			= invoice?.notifsIgnoreIDs || [];
+			ignoreIDs 			= Array.isArray(ignoreIDs)? ignoreIDs: [];
 		var actualRepliesCount 	= 0,
 			actualThreadsCount 	= 0,
 			actualNotifsCount 	= 0;
@@ -3572,7 +3573,8 @@ class AppState {
 	}
 
 	getSelectedWalletID(){
-		return $('#wallet_selector').val() || $('#wallet_selector').find('option').first().val();
+		const cap = $('#wallet_selector').val() || $('#wallet_selector').find('option').first().val();
+		return cap;
 	}
 
 	setCurrentCaptchaFromSelector(){
@@ -3604,7 +3606,7 @@ class AppState {
 				if(!invoice.balance || isNaN(invoice.balance*1) || invoice.balance < 1) continue; // skip empty wallets
 				var balance_strings = [];
 				const crypto_code	= invoice?.crypto_currency || 'BTC';
-				if(show_crypto_balance) balance_strings.push(this.satoshiToCryptoStr(invoice.balance,crypto_code) + ' ' + crypto_code);
+				if(show_crypto_balance) balance_strings.push(this.satoshiToCryptoStr(invoice.balance,crypto_code, true));
 				if(show_sats_balance) 	balance_strings.push((invoice.balance*1).toLocaleString('en-US'));
 				if(show_fiat_balance) 	balance_strings.push(this.satoshiToFiatStr(invoice.balance,crypto_code));
 				var captchaName 	= captchaId.substring(0, 8) + '...';
@@ -3631,24 +3633,33 @@ class AppState {
 				$('#nav-close').trigger('click');
 				this.saveState();
 				$('.original_chat').remove(); // allow the original chat to re-render
-
-				// Reload the thread or get threads again when user changes wallet
-				// if(this.currentThreadID){
-				// 	this.loadThread(this.currentThreadID, this.passCache, true); 
-				// }else{
-				// 	this.getThreads();
-				// }
-				// This allows the follow links to update.
 				this.updateFollowList(this.currentCaptcha);
 				this.updateConversionRates(); // Also fetches user's notifications
 				// verified users only
 				this.loadChannelSelector();
+				this.setHomeLink();
 			});
+			this.setHomeLink();
 			setTimeout(()=>{this.loadChannelSelector}, 150);
 			setTimeout(()=>{this.setCurrentCaptchaFromSelector}, 200);
 			setTimeout(()=>{this.displayConversionRates}, 250);
 		}catch(e){
 			console.error(e);
+		}
+	}
+
+	setHomeLink(){
+		const captchaID = this.getSelectedWalletID();
+		console.log('captchaID',captchaID);
+		const server_url = this.getSetting('server_url');
+		console.log('server_url',server_url);
+		const alias = this.state.invoices[captchaID]?.alias || null;
+		console.log('alias',alias);
+		if(!alias || typeof alias != 'string' || alias.substring(0,1) != '$' || !server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
+			$('#my_hosted_page_link').attr('href', '#').addClass('my_hosted_page_disabled');
+		}else{
+			const myHostedPageURL = `${server_url}/u/${alias}`;
+			$('#my_hosted_page_link').attr('href', myHostedPageURL).removeClass('my_hosted_page_disabled');
 		}
 	}
 
@@ -3778,7 +3789,7 @@ class AppState {
 	buildWalletForm(){
 		this.currentThreadID = null;
 
-		$('#nav_dropdown').slideUp();
+		$('#nav_dropdown').slideUp(200);
 		// Close link
 		const closeIcon = this.heroicon('x-mark') || '❌';
 		const closeLink = $(`<a href="#" id="close_wallet_list" class="pull-right cancel" title="Close Wallet List">${closeIcon}&nbsp;Close</a>`);

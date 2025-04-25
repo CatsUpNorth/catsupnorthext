@@ -400,7 +400,7 @@ $('document').ready(function(){
 		$('#nav_dropdown').fadeToggle(200); 
 		pingServiceWorker();
 	});
-	$('#nav-buy').on('click', function(){ hideNavs(); app.buildWalletForm(); });
+	$('#nav-buy').on('click', function(){ app.buildWalletForm(); });
 	$('#nav-follows').on('click', function(){ hideNavs(); app.buildFollowList(); });
 	$('#nav-settings').on('click', function(){ hideNavs(); app.buildSettingsForm(); });
 	$('#nav-channels').on('click', function(){ hideNavs(); app.buildChannelList(); });

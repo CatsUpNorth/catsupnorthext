@@ -332,7 +332,7 @@ input[type="submit"], .wallet_refresh_all_btn {
   font-size:0.8em;
 }
 #wallet_selector{
-  width: 90%;
+  width: 75%;
   font-size: 1em;
   line-height: 1em;
   height: 1.4em;
@@ -341,6 +341,13 @@ input[type="submit"], .wallet_refresh_all_btn {
   outline: none;
   color: light-dark(var(--lm-faded-txt), var(--dm-faded-txt));
   background-color:rgba(0,0,0,0);
+}
+.my_hosted_page_disabled{
+  /* no click or text selection */
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none; /* Safari */
+  opacity:0.4;
 }
 .chat{
   position: relative;
