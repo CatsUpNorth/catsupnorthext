@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "version": "1.0.0",
-  "name": "CatsUpNorthExt",
-  "description": "CatsUpNorth Web externally_connectable",
+  "name": "CatsUpNorth",
+  "description": "CatsUpNorth.com Official Extension",
   "icons": {
     "16": "images/icon-16.png",
     "48": "images/icon-48.png",
@@ -43,8 +43,7 @@
     "scripting",
     "activeTab", 
     "externally_connectable", 
-    "webNavigation",
-    "notifications"
+    "webNavigation"
   ],
   "host_permissions": ["https://*/", "http://*/"]
 }
