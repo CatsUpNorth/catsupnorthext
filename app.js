@@ -83,6 +83,7 @@ class AppState {
 		this.currentTree 		= {}; // site level thread map
 		this.treeVisibleNodes 	= []; // visible nodes in the tree based un current url.
 		this.crossPostCache		= []; // used to cache cross posts waiting for the parent to load
+		this.homeLink			= null; // used to determine if the user owns the page open in the browser.
 		for (let key in this.settingsDefault) this.settingsSchema[key] = typeof this.settingsDefault[key];
 		this.settingsSchema.server_url = 'string';
 		this.loadState();
@@ -1209,7 +1210,6 @@ class AppState {
 		for(var i=0; i<this.crossPostCache.length; i++){ // jquery elements
 			const crossPost = this.crossPostCache[i];
 			const chatId 	= crossPost.attr('data-id') || null;
-			console.log(chatId, typeof crossPost, crossPost.length);
 			if(chatId == reply_to_id) cont.append(crossPost);
 		}
 		return cont;
@@ -2012,10 +2012,9 @@ class AppState {
 		}
 		$('#main_thread_chat').empty();
 		$('#chat_input').val('').trigger('input');
-		if(url_arg){
-			this.updateCurrentUserURL(url_arg);
-		}
 		const url = this.getCurrentURL();
+
+		this.updateCurrentUserURL(url_arg);
 
 		const ignore_prefixes = ['chrome://','file://','about:','data:','javascript:','view-source:','chrome-extension://'];
 		for(var i=0; i<ignore_prefixes.length; i++){
@@ -2156,6 +2155,7 @@ class AppState {
 					$(`.thread_opener[data-thread-id="${this.forwardedThreadID}"]`).trigger('click');
 					this.forwardedThreadID = null;
 				}
+				this.addArchiveLinks(); // add archive links to threads
 				this.sortThreads(); // sort the threads based on the current sort mode.
 			})
 			.catch(error => {
@@ -2168,6 +2168,71 @@ class AppState {
 				$('#ext_search').attr('placeholder',`Search ${threadCount} Thread${( threadCount == 1? '': 's')}...`);
 				$('#chat_input').focus();
 			});
+	}
+
+	addArchiveLinks(){
+		$('.my_thread').each((i, el) => {
+			const threadId		= $(el).attr('data-thread-id') || 0;
+			const archiveIcon 	= this.heroicon('archive-box') || '📦';
+			const archiveLink 	= $(`<a href="#" class="archive_link" data-thread-id="${threadId}">${archiveIcon} <span class="archive_verb">Archive</span></a>`);
+			archiveLink.on('click', (e) => {
+				e.preventDefault();
+				const target 	= $(e.currentTarget);
+				const threadId 	= target.attr('data-thread-id') || 0;
+				if(!threadId || target.hasClass('archiving')) return; // already archiving, skip it.
+				target.addClass('archiving').find('.archive_verb').empty().append('Archiving...');
+				app.archiveThread(threadId);
+			});
+			const placement = $(el).find('.chat_opts_container');
+			placement.find('.archive_link').remove(); // remove any existing archive links
+			placement.prepend(archiveLink);
+		});
+	}
+
+	archiveThread(threadId){
+		// post captcha, seceret, thread_id to /archive_thread endpoint
+		const server_url = this.getSetting('server_url');
+		if(!server_url){
+			this.feed('Server URL not set.', true);
+			return;
+		}
+		const archiveThreadURL = `${server_url}/archive_thread`;
+		const formData = new FormData();
+		formData.append('captcha_id', this.currentCaptcha);
+		formData.append('secret', this.getInvoiceSecret(this.currentCaptcha));
+		formData.append('thread_id', threadId);
+		fetch(archiveThreadURL, {
+			method: 'POST',
+			body: formData
+		})
+		.then(response => {
+			if (response.ok) {
+				return response.text();
+			} else {
+				throw new Error('Network response was not ok');
+			}
+		})
+		.then(json => {
+			const data = typeof json == 'string'? JSON.parse(json): json;
+			if(!data || typeof data != 'object'){
+				this.feed('Server response parse failed.', true);
+				return;
+			}
+			if (data.error) {
+				this.feed(`${data.error}`, true);
+				return;
+			}
+			this.feed(data.msg);
+			if(data?.thread_id){
+				$('.thread[data-thread-id="' + data.thread_id + '"]').remove(); // remove the thread from the list
+			}else{ // fallback, reload threads
+				this.getThreads();
+			}
+		})
+		.catch(error => {
+			this.feed('There has been a problem with your fetch operation. See console.', true);
+			console.trace(error);
+		});
 	}
 
 	buildUrlHierarchy(urls) {
@@ -3650,16 +3715,14 @@ class AppState {
 
 	setHomeLink(){
 		const captchaID = this.getSelectedWalletID();
-		console.log('captchaID',captchaID);
 		const server_url = this.getSetting('server_url');
-		console.log('server_url',server_url);
 		const alias = this.state.invoices[captchaID]?.alias || null;
-		console.log('alias',alias);
+		this.homeLink = null;
 		if(!alias || typeof alias != 'string' || alias.substring(0,1) != '$' || !server_url || typeof server_url != 'string' || !server_url.startsWith('http')){
 			$('#my_hosted_page_link').attr('href', '#').addClass('my_hosted_page_disabled');
 		}else{
-			const myHostedPageURL = `${server_url}/u/${alias}`;
-			$('#my_hosted_page_link').attr('href', myHostedPageURL).removeClass('my_hosted_page_disabled');
+			this.homeLink = `${server_url}/u/${alias}`;
+			$('#my_hosted_page_link').attr('href', this.homeLink).removeClass('my_hosted_page_disabled');
 		}
 	}
 
