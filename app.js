@@ -146,12 +146,15 @@ class AppState {
 			e.preventDefault();
 			this.getThreads();
 		});
-		$('#gui').empty().append('&nbsp;',exitLink,'<br><br>');
+		$('#gui').empty().append('&nbsp;',exitLink);
 		const bookmarks = this.state?.bookmarks || {};
 		if(!bookmarks || Object.keys(bookmarks).length < 1){
-			this.feed('No bookmarks found.', false, null, true);
+			$('#gui').append('<h2 style="opacity:0.7;padding:10px;font-weight:300;font-style:italic;">No bookmarks found.</h2>');
 			return;
 		}
+		const bookmarkCount = Object.keys(bookmarks).length;
+		const bookmarkIcon = this.heroicon('bookmark') || '🔖';
+		$('#gui').append(`<h2>${bookmarkIcon} ${bookmarkCount} Bookmarks</h2>`);
 		for(let thread_id in bookmarks){
 			if(!bookmarks[thread_id] || !bookmarks[thread_id].url || bookmarks[thread_id].url.length < 1) continue;
 			const bookmark 		= bookmarks[thread_id];
@@ -2012,9 +2015,11 @@ class AppState {
 		}
 		$('#main_thread_chat').empty();
 		$('#chat_input').val('').trigger('input');
+		if(url_arg){
+			this.updateCurrentUserURL(url_arg);
+		}
 		const url = this.getCurrentURL();
 
-		this.updateCurrentUserURL(url_arg);
 
 		const ignore_prefixes = ['chrome://','file://','about:','data:','javascript:','view-source:','chrome-extension://'];
 		for(var i=0; i<ignore_prefixes.length; i++){
