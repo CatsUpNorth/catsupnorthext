@@ -3622,7 +3622,7 @@ class AppState {
 					channelSelector.empty().append('<option value="">Select Channel (optional)</option>');
 					channels.forEach((channel) => {
 						if(!channel || typeof channel != 'object' || !channel.channel || typeof channel.channel != 'string') return;
-						channelSelector.append(`<option value="${channel.channel}">${channel.channel}</option>`);
+						channelSelector.append(`<option value="${channel.channel.replace(/"/g,'&quot;')}">${channel.channel}</option>`);
 					});
 					// select the first channel
 					channelSelector.on('change', (e) => {
